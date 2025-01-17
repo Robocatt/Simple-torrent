@@ -44,9 +44,10 @@ void TorrentTracker::UpdatePeers(const TorrentFile& tf, std::string peerId, int 
         // test << res.text << std::endl;
         // std::cout << res.text << std::endl;
 
-        auto dict_response = Bencode::ParseDict(res.text); // Parse response
-        auto map_from_response = dict_response.first; // get data out of pair 
-        std::string peers = std::get<std::string>(map_from_response["peers"]); // get raw peers string
+        // auto dict_response = Bencode::ParseDict(res.text); // Parse response
+        auto dict_response = Bencode::ParseDictRec(res.text); // Parse response
+        auto map_from_response = *(dict_response.first); // get data out of pair 
+        std::string peers = std::get<std::string>(map_from_response.elements["peers"]); // get raw peers string
         int peers_position = res.text.find("peers");    // shortcuts for a correct determination of number of peers
         int peers_colon_position = res.text.find(":", peers_position);
         int len_of_peers = std::stoi(res.text.substr(peers_position + 5, peers_colon_position - peers_position - 5 ));

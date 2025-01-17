@@ -80,7 +80,8 @@ TorrentFile LoadTorrentFile(const std::string& filename){
         else if(global_key.first == "info"){
             std::cout << "info was called"<< std::endl;
             
-            auto res = Bencode::ParseDict(data.substr(cur_pos));
+            // auto res = Bencode::ParseDict(data.substr(cur_pos));
+            auto res = Bencode::ParseDictRec(data.substr(cur_pos));
             std::cout << "info was called, dict parsed"<< std::endl;
             try{
                 unsigned char SHA_info[20];
@@ -106,7 +107,7 @@ TorrentFile LoadTorrentFile(const std::string& filename){
                 
                 cur_pos += res.second;
             
-                for( auto [key, val] : res.first ){
+                for( auto [key, val] : *(res.first) ){
                     if(key == "name"){
                         TFile.name = std::get<std::string>(val);
                     }else if(key == "length"){

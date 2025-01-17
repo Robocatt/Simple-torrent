@@ -99,26 +99,61 @@ std::pair<std::unique_ptr<bencodeList>, size_t> ParseListRec(const std::string& 
     int cur_pos = 1;
     while(str[cur_pos] != 'e'){
         if(isdigit(str[cur_pos])){
-            std::pair<std::string, size_t> pa = ParseString(str.substr(cur_pos));
-            lst->elements.push_back(pa.first);
-            cur_pos += pa.second;
+            std::pair<std::string, size_t> listItem = ParseString(str.substr(cur_pos));
+            lst->elements.push_back(listItem.first);
+            cur_pos += listItem.second;
         }else if(str[cur_pos] == 'l'){
-            std::pair<std::unique_ptr<bencodeList>, size_t> pa = ParseListRec(str.substr(cur_pos));
-            lst->elements.push_back(std::move(pa.first));
-            cur_pos += pa.second;
+            std::pair<std::unique_ptr<bencodeList>, size_t> listItem = ParseListRec(str.substr(cur_pos));
+            lst->elements.push_back(std::move(listItem.first));
+            cur_pos += listItem.second;
         }else{
-            std::pair<size_t, size_t> pa = ParseInt(str.substr(cur_pos));
-            lst->elements.push_back(pa.first);
-            cur_pos += pa.second;
+            std::pair<size_t, size_t> listItem = ParseInt(str.substr(cur_pos));
+            lst->elements.push_back(listItem.first);
+            cur_pos += listItem.second;
         }
     }
     return {std::move(lst), cur_pos + 1}; 
 }
 
 
+std::unique_ptr<bencodeDict> makeBencodeDict(){
+    return std::make_unique<bencodeDict>();
+}
+
+std::pair<std::unique_ptr<bencodeDict>, size_t> ParseDictRec(const std::string& str){
+    auto dict = makeBencodeDict();
+    int cur_pos = 1;
+    std::cout << "averall size of dict " << str.size() << "\n"; 
+    while(str[cur_pos] != 'e'){
+        std::pair<std::string, size_t> key = ParseString(str.substr(cur_pos));
+        if(isdigit(str[cur_pos + key.second])){
+            std::cout << "parse string, pos " << cur_pos << "\n"; 
+            std::pair<std::string, size_t> dictItem = ParseString(str.substr(cur_pos + key.second));
+            dict[key] = dictItem.first;
+            cur_pos += dict_item.second;
+        }else if(str[cur_pos + key.second] == 'l'){
+            std::cout << "parse list, pos " << cur_pos << "\n";
+            std::pair<std::unique_ptr<bencodeList>, size_t>  dictItem = ParseList(str.substr(cur_pos + key.second));
+            dict[key] = std::move(dictItem.first);
+            cur_pos += dict_item.second;
+        }else if(str[cur_pos + key.second] == 'i'){
+            std::cout << "parse int, pos " << cur_pos << "\n";
+            std::pair<size_t, size_t> dictItem = ParseInt(str.substr(cur_pos + key.second));
+            dict[key] = dictItem.first;
+            cur_pos += dict_item.second;
+        }else{
+            std::cout << "parse inner dict, pos " << cur_pos << "\n";
+            std::pair<std::unique_ptr<bencodeDict>, size_t> dictItem = ParseDictRec(str.substr(cur_pos + key.second));
+            dict[key] = std::move(dictItem.first);
+            cur_pos += dict_item.second;
+        }
+        cur_pos += key.second;   
+        std::cout << "in mp goes key: " << key.first<< " new pos "<< cur_pos << std::endl;
+    }
+    return{mp, cur_pos + 1}; 
 
 
-
+}
 
 
 }
