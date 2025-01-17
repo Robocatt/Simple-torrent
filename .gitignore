@@ -30,3 +30,20 @@
 *.exe
 *.out
 *.app
+
+# virtual environment 
+.venv/
+
+# vscode settings 
+.vscode/
+
+# local all in one log  
+output.txt
+notes.txt
+
+# cmake build folder
+cmake-build/
+
+# folder for .torrent files for tests
+resources/*
+!resources/.gitkeep
