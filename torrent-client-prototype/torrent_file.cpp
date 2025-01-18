@@ -65,18 +65,8 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             }
             cur_pos += res.second;
         }
-        // else if (global_key.first == "announce-list"){//3 variants are possible see http://bittorrent.org/beps/bep_0012.html
-        //     if(!TFile.announceList.empty()){
-        //         TFile.announceList.clear();
-        //     }
-        //     auto res = Bencode::ParseList(data.substr(cur_pos));
-        //     for (auto& elem : res.first){
-        //         TFile.announceList.emplace_back(elem);
-        //     }
+        //3 variants are possible see http://bittorrent.org/beps/bep_0012.html
 
-
-        //     cur_pos += res.second;
-        // }
         else if(global_key.first == "info"){
             std::cout << "info was called"<< std::endl;
             
@@ -106,16 +96,25 @@ TorrentFile LoadTorrentFile(const std::string& filename){
 
                 
                 cur_pos += res.second;
-            
-                for( auto [key, val] : *(res.first) ){
+                for(const auto& [key, val] : res.first->elements ){
+                    auto result = std::visit([](const auto& value) -> std::variant<std::string, size_t> {
+                        using T = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<T, std::string>){
+                            return value;
+                        }else if constexpr (std::is_same_v<T, size_t>){
+                            return value;
+                        }else{
+                            throw std::runtime_error("Unexpected value in visitor");
+                        }
+                    }, val);
                     if(key == "name"){
-                        TFile.name = std::get<std::string>(val);
+                        TFile.name = std::get<std::string>(result);
                     }else if(key == "length"){
-                        TFile.length = std::get<size_t>(val);
+                        TFile.length = std::get<size_t>(result);
                     }else if(key == "piece length"){
-                        TFile.pieceLength = std::get<size_t>(val);
+                        TFile.pieceLength = std::get<size_t>(result);
                     }else if(key == "pieces"){
-                        std::string str_pieces = std::get<std::string>(val);
+                        std::string str_pieces = std::get<std::string>(result);
                         size_t cur_pos = 0;
                         while(cur_pos < str_pieces.size()){
                             TFile.pieceHashes.push_back(str_pieces.substr(cur_pos, std::min(size_t(20), str_pieces.size() - cur_pos)));
@@ -166,11 +165,11 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             cur_pos += res.second;
             int private_value = res.first;//maybe i'll need it 
         }else if(global_key.first == "url-list"){
-            auto res = Bencode::ParseList(data.substr(cur_pos));
+            auto res = Bencode::ParseListRec(data.substr(cur_pos));
             cur_pos += res.second;
             // std::cout << "url-list does not supported in this task"<< std::endl;
         }else if (global_key.first == "httpseeds"){
-            auto res = Bencode::ParseList(data.substr(cur_pos));
+            auto res = Bencode::ParseListRec(data.substr(cur_pos));
             cur_pos += res.second;
         }else if (global_key.first == "encoding"){
             std::cout << "encoding was called\n";

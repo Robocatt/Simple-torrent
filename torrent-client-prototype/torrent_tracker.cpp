@@ -33,21 +33,16 @@ void TorrentTracker::UpdatePeers(const TorrentFile& tf, std::string peerId, int 
         }
         std::cout << "Update peers, get respsonse, status code " << res.status_code << std::endl;
 
-        // if (res.status_code == 200) {
-        //     if (res.text.find("failure reason") == std::string::npos) {
-        //         std::cout << "Successfully requested peers from " << tf.announce << std::endl;
-        //     } else {
-        //         std::cerr << "Server responded '" << res.text << "'" << std::endl;
-        //     }
-        // }
-        // std::ofstream test("out.txt");
-        // test << res.text << std::endl;
-        // std::cout << res.text << std::endl;
 
-        // auto dict_response = Bencode::ParseDict(res.text); // Parse response
         auto dict_response = Bencode::ParseDictRec(res.text); // Parse response
-        auto map_from_response = *(dict_response.first); // get data out of pair 
-        std::string peers = std::get<std::string>(map_from_response.elements["peers"]); // get raw peers string
+        auto& map_from_response = dict_response.first->elements; // get data out of pair 
+        std::string peers;
+        try{
+            peers = std::get<std::string>(map_from_response["peers"]); // get raw peers string
+        }catch(const std::exception& e){
+            std::cerr << "Torrent tracker peers not string\n";
+            throw std::runtime_error("123123 torrent tracker failed");
+        }
         int peers_position = res.text.find("peers");    // shortcuts for a correct determination of number of peers
         int peers_colon_position = res.text.find(":", peers_position);
         int len_of_peers = std::stoi(res.text.substr(peers_position + 5, peers_colon_position - peers_position - 5 ));
