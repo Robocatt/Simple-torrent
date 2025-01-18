@@ -69,8 +69,6 @@ TorrentFile LoadTorrentFile(const std::string& filename){
 
         else if(global_key.first == "info"){
             std::cout << "info was called"<< std::endl;
-            
-            // auto res = Bencode::ParseDict(data.substr(cur_pos));
             auto res = Bencode::ParseDictRec(data.substr(cur_pos));
             std::cout << "info was called, dict parsed"<< std::endl;
             try{
@@ -150,6 +148,7 @@ TorrentFile LoadTorrentFile(const std::string& filename){
         }else if(global_key.first == "creation date"){
             std::cout << "creation date was called\n";
             auto res = Bencode::ParseInt(data.substr(cur_pos));
+            TFile.creationDate = res.first;
             cur_pos += res.second;
         }else if(global_key.first == "comment"){
             std::cout << "comment was called\n";
@@ -159,6 +158,7 @@ TorrentFile LoadTorrentFile(const std::string& filename){
         }else if(global_key.first == "created by"){
             std::cout << "created by was called"<< std::endl;
             auto res = Bencode::ParseString(data.substr(cur_pos));
+            TFile.createdBy = res.first;
             cur_pos += res.second;
         }else if(global_key.first == "private"){
             auto res = Bencode::ParseInt(data.substr(cur_pos));

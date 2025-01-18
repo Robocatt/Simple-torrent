@@ -46,9 +46,13 @@ namespace Bencode {
                 std::pair<std::unique_ptr<bencodeList>, size_t> listItem = ParseListRec(str.substr(cur_pos));
                 lst->elements.push_back(std::move(listItem.first));
                 cur_pos += listItem.second;
-            }else{
+            }else if (str[cur_pos] == 'i'){
                 std::pair<size_t, size_t> listItem = ParseInt(str.substr(cur_pos));
                 lst->elements.push_back(listItem.first);
+                cur_pos += listItem.second;
+            }else{
+                std::pair<std::unique_ptr<bencodeDict>, size_t> listItem = ParseDictRec(str.substr(cur_pos));
+                lst->elements.push_back(std::move(listItem.first));
                 cur_pos += listItem.second;
             }
         }

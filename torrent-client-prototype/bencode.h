@@ -19,8 +19,11 @@ namespace Bencode {
 
     std::pair<size_t, size_t> ParseInt(const std::string& str);
 
+    
     struct bencodeList;
-    using elementList = std::variant<std::string, size_t, std::unique_ptr<bencodeList>>;
+    struct bencodeDict;
+
+    using elementList = std::variant<std::string, size_t, std::unique_ptr<bencodeList>, std::unique_ptr<bencodeDict>>;
     struct bencodeList{
         std::list<elementList> elements;
     };
@@ -28,7 +31,7 @@ namespace Bencode {
     std::unique_ptr<bencodeList> makeBencodeList();
     std::pair<std::unique_ptr<bencodeList>, size_t> ParseListRec(const std::string& str);
 
-    struct bencodeDict;
+    
     using elementDict = std::variant<std::string, size_t, std::unique_ptr<bencodeList>, std::unique_ptr<bencodeDict>>;
     struct bencodeDict{
         std::map<std::string, elementDict> elements;
