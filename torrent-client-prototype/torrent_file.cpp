@@ -72,27 +72,8 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             auto res = Bencode::ParseDictRec(data.substr(cur_pos));
             std::cout << "info was called, dict parsed"<< std::endl;
             try{
-                unsigned char SHA_info[20];
-                std::string full_info_string = data.substr(cur_pos, res.second);
-                const unsigned char* to_encode = reinterpret_cast<const unsigned char *>(full_info_string.c_str());
-                SHA1(to_encode, full_info_string.size(), SHA_info);
-
-                std::string s;
-                s.resize(20);
-                for(int i = 0; i < 20; ++i){
-                    s[i] = SHA_info[i];
-                }
-                TFile.infoHash = s;
-
-                //6d4795dee7aeb88e03e5336ca7c9fcfa1e206d
-                // std::string string_formated;
-                // for(auto i : s){
-                //     string_formated.push_back(char(i));
-                // }
-                // TFile.infoHash = string_formated;
-                // std::cout << string_formated;
-
-                
+                // std::cerr << "string for SHA1 for info_hash " << data.substr(cur_pos, res.second) << "\n";
+                TFile.infoHash = CalculateSHA1(data.substr(cur_pos, res.second));
                 cur_pos += res.second;
                 for(const auto& [key, val] : res.first->elements ){
                     auto result = std::visit([](const auto& value) -> std::variant<std::string, size_t> {

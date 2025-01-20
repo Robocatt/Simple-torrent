@@ -154,6 +154,7 @@ void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, c
     while(trackerIndex < torrentFile.announceList.size() && !fileSaved){
         std::cout << "Connecting to tracker " << torrentFile.announceList[trackerIndex] << std::endl;
         TorrentTracker tracker(torrentFile.announceList[trackerIndex]);
+        std::cout << "after tracker constructor\n";
         int peersReqestLimit = peerRequestsForTrackerLimit; // req limit if 0 peers received.
         bool requestMorePeers = true;
         do {

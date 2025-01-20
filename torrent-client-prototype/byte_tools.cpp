@@ -1,6 +1,8 @@
 #include "byte_tools.h"
 #include <openssl/sha.h>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 //debug
 #include <iostream>
 
@@ -43,4 +45,16 @@ std::string HexEncode(const std::string& input){
     }
     return res;
 
+}
+
+std::string URLEncode(const std::string& data) {
+    std::ostringstream encoded;
+    for (unsigned char c : data) {
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded << c;
+        } else {
+            encoded << '%' << std::hex << std::setw(2) << std::setfill('0') << std::nouppercase << static_cast<int>(c);
+        }
+    }
+    return encoded.str();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <iostream>
 #include "torrent_file.h"
 #include "peer.h"
 
@@ -32,4 +33,6 @@ public:
 private:
     std::string url_;
     std::vector<Peer> peers_;
+    // especially for bt.t-ru.org
+    std::string pk;
 };
