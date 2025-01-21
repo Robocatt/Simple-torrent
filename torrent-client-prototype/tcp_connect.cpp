@@ -15,106 +15,118 @@
 
 
 TcpConnect::TcpConnect(std::string ip, int port, std::chrono::milliseconds connectTimeout, std::chrono::milliseconds readTimeout) :
-    ip_(ip), port_(port), connectTimeout_(connectTimeout), readTimeout_(readTimeout){}
+    ip_(ip), port_(port), connectTimeout_(connectTimeout), readTimeout_(readTimeout){
+        sock_ = -1;
+    }
 
 TcpConnect::~TcpConnect(){
-    close(sock_);
-
+    if (sock_ != -1) {
+        close(sock_);
+    }
 }
 
 
 void TcpConnect::EstablishConnection(){
     struct addrinfo hints;
-    struct addrinfo* server_result;
-    struct addrinfo* recieved_node = NULL; 
-
-    
+    struct addrinfo* serverResult = NULL;
+    struct addrinfo* receivedNode = NULL; 
     memset(&hints, 0, sizeof(hints));
 
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
-    int getaddinfo_status = getaddrinfo(ip_.c_str(), std::string(std::to_string(port_)).c_str(), &hints, &server_result);
-    if(getaddinfo_status < 0){
-        throw std::runtime_error("getaddrinfo fail");
+    int getaddinfoStatus = getaddrinfo(ip_.c_str(), std::string(std::to_string(port_)).c_str(), &hints, &serverResult);
+    if(getaddinfoStatus != 0){
+        throw std::runtime_error("getaddrinfo fail: " + std::string(gai_strerror(getaddinfoStatus)));
     }
 
     
-    int sock;
-    for(recieved_node = server_result; recieved_node != NULL; recieved_node = server_result->ai_next){
-        sock = socket(recieved_node->ai_family, recieved_node->ai_socktype, recieved_node->ai_protocol);
-        if(sock < 0){
+    for(receivedNode = serverResult; receivedNode != NULL; receivedNode = receivedNode->ai_next){
+        sock_ = socket(receivedNode->ai_family, receivedNode->ai_socktype, receivedNode->ai_protocol);
+        if(sock_ < 0){
             continue;
         }
         int yes = 1;
-        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+        setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
         break;
     }
 
-    if(recieved_node == NULL){
-        throw std::runtime_error("Socket is null");
+    if(receivedNode == NULL){
+        freeaddrinfo(serverResult);
+        throw std::runtime_error("Creating socket is not possible with current getaddrinfo");
     }
 
-    sock_ = socket(recieved_node->ai_family, recieved_node->ai_socktype, recieved_node->ai_protocol);
-   
-    int fcntl_status = fcntl(sock_, F_SETFL, O_NONBLOCK);
-    if(fcntl_status < 0){
+    int fcntlStatus = fcntl(sock_, F_SETFL, O_NONBLOCK);
+    if(fcntlStatus < 0){
+        close(sock_);
+        freeaddrinfo(serverResult);
         throw std::runtime_error("fcntl error");
     }
 
-    int connect_status = connect(sock_, server_result->ai_addr, server_result->ai_addrlen );
-    freeaddrinfo(recieved_node);
+    int connect_status = connect(sock_, receivedNode->ai_addr, receivedNode->ai_addrlen );
+    freeaddrinfo(serverResult);
     if(connect_status < 0){
         if(errno == EINPROGRESS){
-            // do{
-                struct timeval tv;
-                tv.tv_sec = connectTimeout_.count() / 1000;
-                tv.tv_usec = (connectTimeout_.count() % 1000) * 1000;
-                fd_set writefds;
-                FD_ZERO(&writefds);
-                FD_SET(sock_, &writefds);
+            struct timeval tv;
+            tv.tv_sec = connectTimeout_.count() / 1000;
+            tv.tv_usec = (connectTimeout_.count() % 1000) * 1000;
+            
+            fd_set writefds;
+            FD_ZERO(&writefds);
+            FD_SET(sock_, &writefds);
 
-                int select_status = select(sock_ + 1, NULL, &writefds, NULL, &tv); 
-                if(select_status < 0 && errno != EINTR){
-                    throw std::runtime_error("Error connecting");
-                 }else if(select_status > 0){
-                    socklen_t l = sizeof(int);
-                    int valopt; 
-                    if (getsockopt(sock_, SOL_SOCKET, SO_ERROR, (void*)(&valopt), &l) < 0) { 
-                        throw std::runtime_error("Error in getsockopt()");
-                    } 
-                    if (valopt) { 
-                        throw std::runtime_error("Error in delayed connection");
-                    } 
-                    
-                    // break; 
-                }else{
-                    throw std::runtime_error("Timeout in select() - Cancelling!");
+            int selectStatus = select(sock_ + 1, NULL, &writefds, NULL, &tv); 
+            if(selectStatus < 0 && errno != EINTR){
+                throw std::runtime_error("Error connecting");
+                }else if(selectStatus > 0){
+                socklen_t l = sizeof(int);
+                int valopt; 
+                if (getsockopt(sock_, SOL_SOCKET, SO_ERROR, (void*)(&valopt), &l) < 0) { 
+                    throw std::runtime_error("Error in getsockopt()");
                 } 
-            // }while(1);
+                if (valopt) { 
+                    throw std::runtime_error("Error in delayed connection");
+                } 
+            }else{
+                throw std::runtime_error("Timeout in select() - Cancelling!");
+            } 
         }else{
             throw std::runtime_error("Error connecting"); 
         }
     }
-    
 }
 
 void TcpConnect::SendData(const std::string& data) const{
-    if(data.size() == 0){
+    if (sock_ < 0) {
+        throw std::runtime_error("Invalid socket in send");
+    }
+    if(data.empty()){
         return;
     }
-    char buffer[data.size()];
-    for(int i = 0; i < data.size(); ++i){
-        buffer[i] = data[i];
+    size_t totalSent = 0;
+    size_t dataSize = data.size();
+    const char* rawDataPtr = data.data();
+    while(totalSent < dataSize){
+        size_t dataSent = send(sock_, rawDataPtr + totalSent, dataSize - totalSent, 0);
+        if(totalSent < 0){
+            if(errno == EINTR){ // signal interrupt, resend
+                continue;
+            }else if(errno == EAGAIN || errno == EWOULDBLOCK){
+                throw std::runtime_error("Error in send data, EAGAIN or EWOULDBLOCK");
+            }else{
+                throw std::runtime_error("Error in send data ?");
+            }
+        }
+        totalSent += (size_t)dataSent;
     }
-    int send_status = send(sock_, buffer, data.size(), 0);
-    if(send_status < 0){
-        throw std::runtime_error("Send error"); 
-    }    
 }
 
 std::string TcpConnect::ReceiveData(size_t bufferSize) const{
-    if(bufferSize > ((2 << 18) - 1)){
+    if (sock_ < 0) {
+        throw std::runtime_error("Invalid socket in receive");
+    }
+
+    if(bufferSize > ((1 << 19) - 1)){
         throw std::runtime_error("Buffer size will be too large upper");
     }
 
@@ -152,7 +164,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                 size_t recv_status = recv(sock_, buffer, sizeof(buffer), 0);
                 // std::cerr << "Raw tcp code pure receive, bf = 0,  peer " << GetIp()<< "recv status "<< recv_status << std::endl;
                 if(recv_status == 0){
-                    return std::string();
+                    throw std::runtime_error("recv error, status 0");
                 }
                 if(recv_status < 0){
                     throw std::runtime_error("recv error");
@@ -165,7 +177,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
 
                 size_t recieved_size = BytesToInt(buffer_str);
                 
-                if(recieved_size > ((2 << 18) - 1)){
+                if(recieved_size > ((1 << 19) - 1)){
                     throw std::runtime_error("Buffer size will be too large");
                 }
                 char new_buffer[recieved_size];
@@ -173,9 +185,9 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                 size_t bytesRead = 0;
                 size_t bytesToRead = recieved_size;
 
-                int fcntl_status = fcntl(sock_, F_GETFL, 0);
-                fcntl_status &= ~O_NONBLOCK;
-                fcntl(sock_, F_SETFL, fcntl_status);
+                int fcntlStatus = fcntl(sock_, F_GETFL, 0);
+                fcntlStatus &= ~O_NONBLOCK;
+                fcntl(sock_, F_SETFL, fcntlStatus);
 
                 // std::cerr << "Raw tcp code pure receive, bf = 0, fcntl set, before loop, peer " << GetIp() << std::endl;
                 auto startTime = std::chrono::steady_clock::now();
@@ -198,8 +210,8 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                 while (bytesToRead > 0);
 
                 // std::cerr << "Raw tcp code pure receive,  AFTER loop, peer " << GetIp() << std::endl;
-                fcntl_status |= O_NONBLOCK;
-                fcntl(sock_, F_SETFL, fcntl_status);
+                fcntlStatus |= O_NONBLOCK;
+                fcntl(sock_, F_SETFL, fcntlStatus);
                 return data;
             }
         }else{
@@ -211,7 +223,10 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
 }
 
 void TcpConnect::CloseConnection(){
-    close(sock_);
+    if (sock_ != -1) {
+        close(sock_);
+        sock_ = -1;
+    }
 }
 
 
