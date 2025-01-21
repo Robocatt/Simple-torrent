@@ -53,6 +53,7 @@ size_t PeerPiecesAvailability::Size() const{
 PeerConnect::PeerConnect(const Peer& peer, const TorrentFile &tf, std::string selfPeerId, PieceStorage& pieceStorage) :
  tf_(tf), selfPeerId_(selfPeerId), terminated_(false), choked_(true),
  socket_(TcpConnect (peer.ip, peer.port, std::chrono::milliseconds(2000), std::chrono::milliseconds(4000))), pieceInProgress_(nullptr), pieceStorage_(pieceStorage), pendingBlock_(false) {
+    //changing std::chrono::milliseconds(8000) breaks code 
     std::cout << "RUN PEER WITH IP " << peer.ip << std::endl;
     if(selfPeerId_.size() != 20){
         throw std::runtime_error("Self id is not 20 bytes long");

@@ -132,7 +132,6 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
             }
             return true;
         }
-        // if(pieces.)
         std::this_thread::sleep_for(1s);
     }
     std::cout << "All pieces are saved to disk\n";
@@ -251,7 +250,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "after torrent path" << std::endl;
             }catch (const char* exception){
                 std::cout << "Exception occurred: in torrent path" << exception << std::endl;
-                return 1; // Or handle the exception as per your requirements
+                return 1;
             }
         }
     }
@@ -265,7 +264,7 @@ int main(int argc, char* argv[]) {
 
     TestTorrentFile(std::filesystem::path(path_to_torrent_file), folder_path, percent);
     std::cout << "end of main.cpp file was downloaded "<<std::endl;
-    // }
+    
     }catch (const char* exception){
         std::cout << "Exception occurred: in main" << exception << std::endl;
         return 1;

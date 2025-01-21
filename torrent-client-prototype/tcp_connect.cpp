@@ -11,14 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/poll.h>
-#include <limits>
-#include <utility>
-
-
 #include <netdb.h>
-#include <vector>
-#include <string>
-#include <limits>
 
 
 TcpConnect::TcpConnect(std::string ip, int port, std::chrono::milliseconds connectTimeout, std::chrono::milliseconds readTimeout) :

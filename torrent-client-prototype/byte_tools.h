@@ -24,7 +24,6 @@ std::string HexEncode(const std::string& input);
 
 std::string IntToBytes(int num);
 
-std::string readUTF8Bytes(std::string input, long long bytesNumber);
 
 // manually encode byte string for http request 
 std::string URLEncode(const std::string& data);
