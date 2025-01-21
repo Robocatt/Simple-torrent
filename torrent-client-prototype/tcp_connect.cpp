@@ -100,20 +100,17 @@ void TcpConnect::EstablishConnection(){
 }
 
 void TcpConnect::SendData(const std::string& data) const{
-    
+    if(data.size() == 0){
+        return;
+    }
     char buffer[data.size()];
     for(int i = 0; i < data.size(); ++i){
         buffer[i] = data[i];
-    }
-    if(data.size() == 0){
-        return;
     }
     int send_status = send(sock_, buffer, data.size(), 0);
     if(send_status < 0){
         throw std::runtime_error("Send error"); 
     }    
-    
-
 }
 
 std::string TcpConnect::ReceiveData(size_t bufferSize) const{

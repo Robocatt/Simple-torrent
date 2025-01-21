@@ -10,8 +10,6 @@
 #include <string>
 #include <algorithm>
 
-namespace fs = std::filesystem;
-
 const int peerRequestsForTrackerLimit = 10;
 
 std::string RandomString(size_t length) {
@@ -25,7 +23,6 @@ std::string RandomString(size_t length) {
 }
 
 const std::string PeerId = "TESTAPPDONTWORRY" + RandomString(4);
-// constexpr size_t PiecesToDownload = 20;
 
 void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces) {
     pieces.CloseOutputFile();
@@ -187,7 +184,7 @@ void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, c
     std::cout << " END DownloadTorrentFile\n";
 }
 
-void TestTorrentFile(const fs::path& file, const fs::path& folder_path, size_t percent) {
+void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::path& pathToSaveDirectory, size_t percent) {
     TorrentFile torrentFile;
     
     try {
@@ -196,10 +193,9 @@ void TestTorrentFile(const fs::path& file, const fs::path& folder_path, size_t p
     } catch (const std::invalid_argument& e) {
         std::cerr << e.what() << std::endl;
         return;
-        
     }
-    std::cout << "test torrent file path " << folder_path << std::endl;
-    PieceStorage pieces(torrentFile, folder_path, percent);
+    std::cout << "test torrent file path " << pathToSaveDirectory << std::endl;
+    PieceStorage pieces(torrentFile, pathToSaveDirectory, percent);
 
     // const std::filesystem::path outputDirectory = PrepareDownloadDirectory(PeerId);
     
@@ -207,9 +203,9 @@ void TestTorrentFile(const fs::path& file, const fs::path& folder_path, size_t p
     DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
     pieces.CloseOutputFile();
 
-    // CheckDownloadedPiecesIntegrity(folder_path / torrentFile.name, torrentFile, pieces);
+    // CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces);
     // std::cout << "after check download" << std::endl;
-    // DeleteDownloadedFile(folder_path / torrentFile.name);
+    // DeleteDownloadedFile(pathToSaveDirectory / torrentFile.name);
 }
 
 int main(int argc, char* argv[]) {
@@ -219,52 +215,61 @@ int main(int argc, char* argv[]) {
         std::cout << argv[i] << std::endl;
     }
 
-    std::filesystem::path folder_path;
+    std::filesystem::path pathToSaveDirectory;
+    std::filesystem::path pathToTorrentFile;
     size_t percent;
-    std::string path_to_torrent_file;
     
     for(int i = 1; i < argc; ++i){
         std::string arg = argv[i];
         if(arg == "-d"){
             if (i + 1 < argc) {
-                folder_path = std::filesystem::path(std::string(argv[i + 1]));
+                pathToSaveDirectory = std::filesystem::path(std::string(argv[i + 1]));
+                std::filesystem::perms perms = std::filesystem::status(pathToSaveDirectory).permissions();
+                if (!((perms & std::filesystem::perms::owner_write) != std::filesystem::perms::none ||
+                    (perms & std::filesystem::perms::group_write) != std::filesystem::perms::none ||
+                    (perms & std::filesystem::perms::others_write) != std::filesystem::perms::none)) {
+                    std::cout << "Do not have permission to write to the directory" << std::endl;
+                    return 1;
+                }
                 i++;
-                std::cout << "-d correctly passed " << folder_path << std::endl;
+                std::cout << "-d correctly passed " << pathToSaveDirectory << std::endl;
             }else{
                 std::cout << "Missing folder path after -d option." << std::endl;
                 return 1;
             }
         }else if(arg == "-p"){
             if (i + 1 < argc) {
-                percent = (size_t)stoll(std::string(argv[i + 1]));
-                i++;
-                std::cout << "-p correctly passed " << percent << std::endl;
+                long long percentLL = stoll(std::string(argv[i + 1]));
+                if(percentLL < 0){
+                    std::cout << "Percent to download can not be negative." << std::endl;
+                    return 1;
+                }else if(percentLL == 0){
+                    std::cout << "Percent to download can not be 0." << std::endl;
+                    return 1;
+                }else if(percentLL > 100){
+                    std::cout << "Percent to download can not be more than 100." << std::endl;
+                    return 1;
+                }else {
+                    percent = (size_t)percentLL;
+                    i++;
+                    std::cout << "-p correctly passed " << percent << std::endl;
+                }
             }else{
-                std::cout << "Missing percent after -p option." << std::endl;
+                std::cout << "Missing percent to downaload after -p option." << std::endl;
                 return 1;
             }
         }else{
-            try{
-                std::cout << "torrent path" << std::endl;
-                path_to_torrent_file = arg;
-                std::cout << "after torrent path" << std::endl;
-            }catch (const char* exception){
-                std::cout << "Exception occurred: in torrent path" << exception << std::endl;
+            pathToTorrentFile = std::filesystem::path(arg);
+            if(!std::filesystem::exists(pathToTorrentFile)){
+                std::cout << "Torrent file in " << arg << " does not exist." << std::endl;
                 return 1;
             }
         }
     }
-    
 
-
-
-    // for (const auto& entry : fs::directory_iterator("resources")) {
-    // std::cout << path_to_torrent_file << std::endl;
-    std::filesystem::path x = path_to_torrent_file;
-
-    TestTorrentFile(std::filesystem::path(path_to_torrent_file), folder_path, percent);
+    TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent);
     std::cout << "end of main.cpp file was downloaded "<<std::endl;
-    
+
     }catch (const char* exception){
         std::cout << "Exception occurred: in main" << exception << std::endl;
         return 1;
