@@ -5,14 +5,35 @@ PieceStorage::PieceStorage(const TorrentFile& tf, const std::filesystem::path& o
     std::cout << "constructor Piece storage, tf.name is  " << tf.name << std::endl;
     std::filesystem::path path_file = path / tf.name;
     std::cout << "constructor Piece storage, path is " << path_file << std::endl;
-    size_t number_of_pieces_to_download = tf.pieceHashes.size() * percent / 100 + 1;
-    std::cout << "constructor Piece storage, expected number of pieces is " << number_of_pieces_to_download << std::endl;
-    for(size_t i = 0; i < number_of_pieces_to_download; ++i){
-        PiecePtr x = std::make_shared<Piece>(Piece(i, tf.pieceLength, tf.pieceHashes[i]));
+
+    size_t totalBytesWanted = static_cast<size_t>(
+        static_cast<double>(tf.length) * (static_cast<double>(percent) / 100.0)
+    );
+    if (totalBytesWanted == 0 && percent > 0) {
+        totalBytesWanted = 1; 
+    }
+    piecesToDownload = (totalBytesWanted + tf.pieceLength - 1) / tf.pieceLength;
+    if (piecesToDownload > tf.pieceHashes.size()) {
+        piecesToDownload = tf.pieceHashes.size();
+    }
+
+    std::cout << "constructor Piece storage, expected number of pieces is " << piecesToDownload << std::endl;
+
+    for(size_t i = 0; i < piecesToDownload; ++i){
+        size_t pieceSize = tf.pieceLength;
+        if(i + 1 == piecesToDownload){
+            size_t pieceStart = i * tf.pieceLength;
+            if (tf.length > pieceStart){
+                pieceSize = tf.length - pieceStart; 
+            }else{
+                pieceSize = 0;
+            }
+        }
+        PiecePtr x = std::make_shared<Piece>(Piece(i, pieceSize, tf.pieceHashes[i]));
         remainPieces_.push(x);
     }
     
-    file.open(path / tf.name);
+    file.open(path_file);
     file.seekp(tf.length - 1);
     file.write("", 1);
 }
@@ -62,7 +83,7 @@ const std::vector<size_t>& PieceStorage::GetPiecesSavedToDiscIndices() const{
 
 
 size_t PieceStorage::TotalPiecesCount() const {
-    return remainPieces_.size() + pieces_in_progress + saved_pieces.size();
+    return piecesToDownload;
 }
 
 void PieceStorage::SavePieceToDisk(const PiecePtr& piece) {

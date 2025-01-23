@@ -151,12 +151,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                 }else if(recv_status > bufferSize){
                     throw std::runtime_error("recv > buffersize");
                 }
-                std::string s;
-                for(size_t i = 0; i < recv_status; ++i){
-                    s += buffer[i];
-                }
-
-                return s;
+                return std::string(buffer, recv_status);
             }else{
                 // std::cerr << "Raw tcp code pure receive, buffersize 0 peer " << GetIp() << std::endl;
                 char buffer[4];  
@@ -170,10 +165,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                     throw std::runtime_error("recv error");
                 }
 
-                std::string buffer_str;
-                for(int i = 0; i < 4; ++i){
-                    buffer_str += buffer[i];
-                }
+                std::string buffer_str = std::string(buffer, 4);
 
                 size_t recieved_size = BytesToInt(buffer_str);
                 
@@ -203,9 +195,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                         throw std::runtime_error("recv < 0");
                     }
                     bytesToRead -= bytesRead;
-                    for (int i = 0; i < bytesRead; ++i){
-                        data += new_buffer[i];
-                    }
+                    data += std::string(new_buffer, bytesRead);
                 }
                 while (bytesToRead > 0);
 

@@ -10,6 +10,7 @@
 #include <string>
 #include <algorithm>
 
+
 const int peerRequestsForTrackerLimit = 10;
 
 std::string RandomString(size_t length) {
@@ -113,8 +114,8 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
 
     std::this_thread::sleep_for(10s);
     std::cout << "Main thread awake after sleep, all jobs are set\n";
-    std::cout << "expected number of pieces : " << torrentFile.pieceHashes.size() * percent / 100 + 1 << "\n";
-    while (pieces.PiecesSavedToDiscCount() < torrentFile.pieceHashes.size() * percent / 100 + 1) {
+    std::cout << "expected number of pieces : " << pieces.TotalPiecesCount() << "\n";
+    while (pieces.PiecesSavedToDiscCount() < pieces.TotalPiecesCount()) {
         std::cout << "in loop, PiecesSavedToDiscCount = " << pieces.PiecesSavedToDiscCount() << " ";
         std::cout << "PiecesInProgressCount = " << pieces.PiecesInProgressCount() << " ";
         std::cout << "peerThreads size = " << peerThreads.size() << "\n";
@@ -193,6 +194,7 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
     } catch (const std::invalid_argument& e) {
         std::cerr << e.what() << std::endl;
         return;
+        
     }
     std::cout << "test torrent file path " << pathToSaveDirectory << std::endl;
     PieceStorage pieces(torrentFile, pathToSaveDirectory, percent);

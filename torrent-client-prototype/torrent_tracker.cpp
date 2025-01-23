@@ -10,7 +10,7 @@ TorrentTracker::TorrentTracker(const std::string& url){
     long long pos = url.find("?");
     // fix for bt.t-ru.org
     // parse pk value and set as param
-    std::cout << "pos = " << pos <<"\n";
+    std::cout << "pos of ? symbol in torrentTracker constructor = " << pos <<"\n";
     if(pos != std::string::npos){
         url_ = url.substr(0, pos);
         pk = url.substr(pos + 4);
@@ -43,7 +43,7 @@ void TorrentTracker::UpdatePeers(const TorrentFile& tf, std::string peerId, int 
     session.SetUrl(url);
     session.SetHeader(header);
     session.SetTimeout(timeout);
-    // session.SetProxies(proxies);
+    session.SetProxies(proxies);
     cpr::Parameters params;
     if (!pk.empty()) {
         params.Add({
