@@ -139,7 +139,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
     if(poll_status < 0){
         throw std::runtime_error("poll status < 0");
     }else if(poll_status == 0){
-        throw std::runtime_error("poll time out buffersize != 0 ");
+        throw std::runtime_error("poll time out 0 ");
     }else{
         if(p.revents & POLLIN){
             if(bufferSize != 0){
@@ -159,10 +159,9 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
                 size_t recv_status = recv(sock_, buffer, sizeof(buffer), 0);
                 // std::cerr << "Raw tcp code pure receive, bf = 0,  peer " << GetIp()<< "recv status "<< recv_status << std::endl;
                 if(recv_status == 0){
-                    throw std::runtime_error("recv error, status 0");
-                }
-                if(recv_status < 0){
-                    throw std::runtime_error("recv error");
+                    throw std::runtime_error("recv = 0, buffersize = 4");
+                }else if(recv_status < 0){
+                    throw std::runtime_error("recv < 0, buffersize = 4");
                 }
 
                 std::string buffer_str = std::string(buffer, 4);
@@ -208,7 +207,7 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
             throw std::runtime_error("POLLIN failed");
         }
     }
-
+    return "";
 
 }
 

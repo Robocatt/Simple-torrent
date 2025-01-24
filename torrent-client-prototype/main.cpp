@@ -18,7 +18,7 @@ std::string RandomString(size_t length) {
     std::string result;
     result.reserve(length);
     for (size_t i = 0; i < length; ++i) {
-        result.push_back(random() % ('Z' - 'A') + 'A');
+        result.push_back(random() % ('Z' - 'A' + 1) + 'A');
     }
     return result;
 }
@@ -128,7 +128,7 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
             for (std::thread& thread : peerThreads) {
                 thread.join();
             }
-            return true;
+            return false;
         }
         std::this_thread::sleep_for(1s);
     }
@@ -142,7 +142,7 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
         thread.join();
     }
     std::cout << " END RunDownloadMultithread\n";
-    return false;
+    return true;
 }
 
 void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, const std::string& ourId, size_t percent) {

@@ -1,36 +1,32 @@
 #include "piece_storage.h"
 #include <iostream>
+#include <cmath>   
 
 PieceStorage::PieceStorage(const TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent): tf_(tf), path(outputDirectory), pieces_in_progress(0){ 
     std::cout << "constructor Piece storage, tf.name is  " << tf.name << std::endl;
     std::filesystem::path path_file = path / tf.name;
     std::cout << "constructor Piece storage, path is " << path_file << std::endl;
 
-    size_t totalBytesWanted = static_cast<size_t>(
-        static_cast<double>(tf.length) * (static_cast<double>(percent) / 100.0)
+    size_t totalBytesWanted = static_cast<size_t>(std::ceil(
+        static_cast<double>(tf.length) * (static_cast<double>(percent) / 100.0))
     );
     if (totalBytesWanted == 0 && percent > 0) {
         totalBytesWanted = 1; 
     }
-    piecesToDownload = (totalBytesWanted + tf.pieceLength - 1) / tf.pieceLength;
-    if (piecesToDownload > tf.pieceHashes.size()) {
-        piecesToDownload = tf.pieceHashes.size();
-    }
-
+    piecesToDownload = std::min(tf.pieceHashes.size(), (totalBytesWanted + tf.pieceLength - 1) / tf.pieceLength);
     std::cout << "constructor Piece storage, expected number of pieces is " << piecesToDownload << std::endl;
 
-    for(size_t i = 0; i < piecesToDownload; ++i){
+    
+    for(size_t i = 0; i < piecesToDownload; ++i){// 3
         size_t pieceSize = tf.pieceLength;
-        if(i + 1 == piecesToDownload){
-            size_t pieceStart = i * tf.pieceLength;
-            if (tf.length > pieceStart){
-                pieceSize = tf.length - pieceStart; 
-            }else{
-                pieceSize = 0;
-            }
+        size_t pieceEnd = (i + 1) * tf.pieceLength;
+        if(pieceEnd > tf.length){
+            pieceSize = tf.length - i * tf.pieceLength;
         }
-        PiecePtr x = std::make_shared<Piece>(Piece(i, pieceSize, tf.pieceHashes[i]));
-        remainPieces_.push(x);
+        std::cout << "i is " << i << "pieceSize " << pieceSize << std::endl;
+        remainPieces_.push(
+            std::make_shared<Piece>(Piece(i, pieceSize, tf.pieceHashes[i]))
+            );
     }
     
     file.open(path_file);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <iostream>
 #include <chrono>
 
 /*
@@ -50,6 +51,11 @@ public:
      * Закрыть сокет
      */
     void CloseConnection();
+
+    // Update connection timeout if keep alive received 
+    void updateConnectionTimeout(){
+        std::cout<< "!Dummy update timout\n";
+    }
 
     const std::string& GetIp() const;
     int GetPort() const;

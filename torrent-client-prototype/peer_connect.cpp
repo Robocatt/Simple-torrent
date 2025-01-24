@@ -63,10 +63,10 @@ PeerConnect::PeerConnect(const Peer& peer, const TorrentFile &tf, std::string se
 void PeerConnect::Run() {
     while (!terminated_) {
         if (EstablishConnection()) {
-            std::cout << "Connection established to peer" <<  std::endl;
+            std::cout << "Connection established to peer " << socket_.GetIp() <<  std::endl;
             MainLoop();
         } else {
-            std::cerr << "Cannot establish connection to peer" << std::endl;
+            std::cerr << "Cannot establish connection to peer " << socket_.GetIp() << std::endl;
             Terminate();
         }
     }
@@ -145,10 +145,11 @@ bool PeerConnect::Failed() const{
 
 
 void PeerConnect::RequestPiece() {
+    // here is bug somewhere. See output.txt
+    // why so many same requests? From where are they? 
     if(pieceInProgress_ == nullptr){
         pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();
-    }
-    if(pieceInProgress_->AllBlocksRetrieved()){
+    }else if(pieceInProgress_ && pieceInProgress_->AllBlocksRetrieved()){
         pieceStorage_.PieceProcessed(pieceInProgress_);
         pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();
     }
@@ -179,27 +180,28 @@ void PeerConnect::RequestPiece() {
 
 void PeerConnect::MainLoop() {
     while (!terminated_) {
-        std::string received_data;
-        std::cout << socket_.GetIp() << " peer, BEFORE receive from socket" << std::endl;
+        std::string receivedData;
+        std::cout << socket_.GetIp() << " peer, PeerConnect::MainLoop BEFORE receive from socket" << std::endl;
         try{
-            received_data = socket_.ReceiveData();
+            receivedData = socket_.ReceiveData();
         }catch(const std::exception& e){
-            std::cerr << "Error in receive del piece, term the peer " << socket_.GetIp() << " " << e.what() << std::endl;
+            std::cerr << socket_.GetIp() << " peer, Error in receiveData, del piece, term the peer " << " " << e.what() << std::endl;
             // will be mismatch in hash and the piece ll be returned to queue
             if(pieceInProgress_){
                 pieceStorage_.PieceProcessed(pieceInProgress_);
             }
             Terminate();
+            break;
         }
         std::cout << socket_.GetIp() << " peer, after receive from socket" << std::endl;
-        // if(received_data == "tcp_fail"){
-        //     pieceStorage_.PieceProcessed(pieceInProgress_);
-        //     throw std::runtime_error("Error in PeerConnect main loop, tcp failed"); 
-        // }
-        Message ms = ms.Parse(received_data);
+        Message ms = ms.Parse(receivedData);
         if(ms.id == MessageId::Have){
             size_t index_of_bit_to_be_set = BytesToInt(ms.payload);
             piecesAvailability_.SetPieceAvailability(index_of_bit_to_be_set);
+        }else if(ms.id == MessageId::KeepAlive){
+            socket_.updateConnectionTimeout();
+            std::cout << "PeerConnect main loop, received keep alive, update connection timeout for peer " << 
+            socket_.GetIp() << std::endl;
         }else if(ms.id == MessageId::Choke){
             choked_ = true;
         }else if(ms.id == MessageId::Unchoke){
@@ -215,7 +217,9 @@ void PeerConnect::MainLoop() {
             std::cout << "In main loop, peer: "<< socket_.GetIp() << " ";
             std::cout << "index " << index_recieved << " offset " << begin_recieved << " saved "<< std::endl;
         }else{
-            std::cout << socket_.GetIp() << "BEFORE ERROR THROW" << std::endl;
+            std::cout << socket_.GetIp() << "BEFORE ERROR THROW ";
+            std::cout << (ms.payload == "" ? "empty payload" : ms.payload) << std::endl;
+
             throw std::runtime_error("Sth bad occured in main loop");
         }
 

@@ -8,7 +8,7 @@ constexpr size_t BLOCK_SIZE = 1 << 14;
 Piece::Piece(size_t index, size_t length, std::string hash) : index_(index), length_(length), hash_(hash) {
     size_t len = length_;
     int times = 0;
-    while (len / BLOCK_SIZE > 0){
+    while (len >= BLOCK_SIZE){
         blocks_.emplace_back(Block(index, times * BLOCK_SIZE, BLOCK_SIZE, Block::Status::Missing, std::string()));
         times++;
         len -= BLOCK_SIZE;
