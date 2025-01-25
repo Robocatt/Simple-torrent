@@ -47,4 +47,3 @@ cmake-build/
 # folder for .torrent files for tests
 resources/*
 !resources/.gitkeep
-!BUGoutput.txt

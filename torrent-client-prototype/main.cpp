@@ -8,6 +8,7 @@
 #include <random>
 #include <thread>
 #include <string>
+#include <system_error>
 #include <algorithm>
 
 
@@ -25,60 +26,126 @@ std::string RandomString(size_t length) {
 
 const std::string PeerId = "TESTAPPDONTWORRY" + RandomString(4);
 
+/**
+ * If -no-check is NOT specified, this function is called to verify
+ * that all downloaded pieces match their expected SHA1 hash.
+ */
 void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces) {
-    pieces.CloseOutputFile();
-
-    if (std::filesystem::file_size(outputFilename) != tf.length) {
-        throw std::runtime_error("Output file has wrong size");
+    std::cout << "Start downloaded pieces hash check for file: " << outputFilename << std::endl;
+    const auto& savedIndices = pieces.GetPiecesSavedToDiscIndices();
+    
+    if(savedIndices.empty()){
+        if(std::filesystem::exists(outputFilename) &&
+        std::filesystem::file_size(outputFilename) > 0){
+            throw std::runtime_error("Output file is not empty, but pieces were not marked as saved");
+        }
+        return;
+    }
+    
+    if(!std::filesystem::exists(outputFilename)){
+        throw std::runtime_error("Output file does not exist!");
     }
 
-    if (pieces.GetPiecesSavedToDiscIndices().size() != pieces.PiecesSavedToDiscCount()) {
-        throw std::runtime_error("Cannot determine real amount of saved pieces");
-    }
-
-    // if (pieces.PiecesSavedToDiscCount() < PiecesToDownload) {
-    //     throw std::runtime_error("Downloaded pieces amount is not enough");
-    // }
-
-    // if (pieces.TotalPiecesCount() != tf.pieceHashes.size() || pieces.TotalPiecesCount() < 200) {
-    //     throw std::runtime_error("Wrong amount of pieces");
-    // }
-
-    std::vector<size_t> pieceIndices = pieces.GetPiecesSavedToDiscIndices();
+    std::vector<size_t> pieceIndices(savedIndices.begin(), savedIndices.end());
     std::sort(pieceIndices.begin(), pieceIndices.end());
+    
+    size_t maxPieceIndex = pieceIndices.back();
+    size_t pieceStartByte = maxPieceIndex * tf.pieceLength;
+    size_t pieceEndByte   = (maxPieceIndex + 1) * tf.pieceLength;
+    size_t lastPieceSize = (pieceEndByte > tf.length 
+        ? tf.length - pieceStartByte
+        : tf.pieceLength);
+
+    size_t expectedSize = pieceStartByte + lastPieceSize;
+
+    size_t actualSize = std::filesystem::file_size(outputFilename);
+    if(expectedSize != actualSize){
+        throw std::runtime_error(
+            "Output file has incorrect size: expected = " + std::to_string(expectedSize) 
+            + ", actual = " + std::to_string(actualSize));
+    }
+
 
     std::ifstream file(outputFilename, std::ios_base::binary);
-    for (size_t pieceIndex : pieceIndices) {
-        const std::streamoff positionInFile = pieceIndex * tf.pieceLength;
-        file.seekg(positionInFile);
+    
+    if (!file.is_open()) {\
+        const std::string tmp = "sdg";
+        throw std::filesystem::filesystem_error(
+            "Cannot open file for integrity check:", outputFilename,
+            std::make_error_code(std::errc::no_such_file_or_directory)
+        );
+    }
+    
+    for (size_t pieceIndex = 0; pieceIndex <= maxPieceIndex; pieceIndex++) {
+        std::size_t pieceOffset = pieceIndex * tf.pieceLength;
+        std::size_t nextPieceOffset = (pieceIndex + 1) * tf.pieceLength;
+        std::size_t thisPieceSize = (nextPieceOffset > tf.length)
+                                       ? (tf.length - pieceOffset)
+                                       : tf.pieceLength;
+        
+        file.seekg(static_cast<std::streamoff>(pieceOffset), std::ios::beg);
         if (!file.good()) {
-            throw std::runtime_error("Cannot read from file");
+            throw std::filesystem::filesystem_error(
+                "Failed to seek to piece offset", outputFilename,
+                std::make_error_code(std::errc::no_such_file_or_directory)
+            );
         }
-        std::string pieceDataFromFile(tf.pieceLength, '\0');
-        file.read(pieceDataFromFile.data(), tf.pieceLength);
-        const size_t readBytesCount = file.gcount();
-        pieceDataFromFile.resize(readBytesCount);
-        const std::string realHash = CalculateSHA1(pieceDataFromFile);
+        std::string pieceDataFromFile(thisPieceSize, '\0');
+        file.read(pieceDataFromFile.data(), static_cast<std::streamsize>(thisPieceSize));
+        size_t bytesRead = static_cast<std::size_t>(file.gcount());
+        
+        if (bytesRead != thisPieceSize) {
+            throw std::runtime_error(
+                "Could not read full piece from file. Expected " + 
+                std::to_string(thisPieceSize) + " bytes, got " + std::to_string(bytesRead)
+            );
+        }
 
+        const std::string realHash = CalculateSHA1(pieceDataFromFile);
         if (realHash != tf.pieceHashes[pieceIndex]) {
-            std::cerr << "File piece with index " << pieceIndex << " started at position " << positionInFile <<
-                      " with length " << pieceDataFromFile.length() << " has wrong hash " << HexEncode(realHash) <<
-                      ". Expected hash is " << HexEncode(tf.pieceHashes[pieceIndex]) << std::endl;
-            throw std::runtime_error("Wrong piece hash");
+            std::cerr << "File piece with index " << pieceIndex << " has incorrect hash\n Expected: "
+                      << HexEncode(tf.pieceHashes[pieceIndex]) << "\n Got : "
+                      << HexEncode(realHash) << std::endl;
+            throw std::runtime_error("Wrong piece hash for index " + std::to_string(pieceIndex));
         }
     }
+    std::cout << "All downloaded pieces has correct hash.\n";
+    return;
 }
 
 // void DeleteDownloadedFile(const std::filesystem::path& outputFilename) {
 //     std::filesystem::remove(outputFilename);
 // }
 
-// std::filesystem::path PrepareDownloadDirectory(const std::string& randomString) {
-//     std::filesystem::path outputDirectory = "/tmp/downloads";
-//     outputDirectory /=  randomString;
-//     std::filesystem::create_directories(outputDirectory);
-//     return outputDirectory;
-// }
+std::filesystem::path PrepareDownloadDirectory(const std::filesystem::path& userPath) {
+    std::error_code ec;
+    if (!std::filesystem::exists(userPath, ec)) {
+        if (!std::filesystem::create_directories(userPath, ec) && ec) {
+            throw std::runtime_error(
+                "Failed to create directory " + userPath.string() + ": " + ec.message()
+            );
+        }
+        std::cout << "Created directory: " << userPath.string() << std::endl;
+    }
+    
+    std::filesystem::perms perms = std::filesystem::status(userPath, ec).permissions();
+    if (ec) {
+        throw std::runtime_error(
+            "Could not retrieve permissions for " + userPath.string() + ": " + ec.message()
+        );
+    }
+    bool canWrite =
+        ((perms & std::filesystem::perms::owner_write)  != std::filesystem::perms::none) ||
+        ((perms & std::filesystem::perms::group_write)  != std::filesystem::perms::none) ||
+        ((perms & std::filesystem::perms::others_write) != std::filesystem::perms::none);
+
+    if (!canWrite) {
+        throw std::invalid_argument(
+            "Do not have permission to write to directory: " + userPath.string()
+        );
+    }
+    return userPath;
+}
 
 bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile, const std::string& ourId, const TorrentTracker& tracker, size_t percent) {
     using namespace std::chrono_literals;
@@ -191,89 +258,83 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
     try {
         torrentFile = LoadTorrentFile(file);
         std::cout << "Loaded torrent file " << file << ". Comment: " << torrentFile.comment << std::endl;
-    } catch (const std::invalid_argument& e) {
+    } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return;
-        
     }
     std::cout << "test torrent file path " << pathToSaveDirectory << std::endl;
     PieceStorage pieces(torrentFile, pathToSaveDirectory, percent);
-
-    // const std::filesystem::path outputDirectory = PrepareDownloadDirectory(PeerId);
-    
     
     DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
     pieces.CloseOutputFile();
 
-    // CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces);
-    // std::cout << "after check download" << std::endl;
-    // DeleteDownloadedFile(pathToSaveDirectory / torrentFile.name);
+    CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces);
+
 }
 
 int main(int argc, char* argv[]) {
     try{
-    std::cout << "argc is " << argc << std::endl;
-    for (int i = 1; i < argc; ++i){
-        std::cout << argv[i] << std::endl;
-    }
+        std::cout << "argc is " << argc << std::endl;
+        for (int i = 1; i < argc; ++i){
+            std::cout << argv[i] << std::endl;
+        }
 
-    std::filesystem::path pathToSaveDirectory;
-    std::filesystem::path pathToTorrentFile;
-    size_t percent;
-    
-    for(int i = 1; i < argc; ++i){
-        std::string arg = argv[i];
-        if(arg == "-d"){
-            if (i + 1 < argc) {
-                pathToSaveDirectory = std::filesystem::path(std::string(argv[i + 1]));
-                std::filesystem::perms perms = std::filesystem::status(pathToSaveDirectory).permissions();
-                if (!((perms & std::filesystem::perms::owner_write) != std::filesystem::perms::none ||
-                    (perms & std::filesystem::perms::group_write) != std::filesystem::perms::none ||
-                    (perms & std::filesystem::perms::others_write) != std::filesystem::perms::none)) {
-                    std::cout << "Do not have permission to write to the directory" << std::endl;
+        std::filesystem::path pathToSaveDirectory{};
+        std::filesystem::path pathToTorrentFile;
+        size_t percent = -1;
+        bool doCheck = true; 
+        
+        for(int i = 1; i < argc; ++i){
+            std::string arg = argv[i];
+            if(arg == "-d"){
+                if (i + 1 < argc) {
+                    pathToSaveDirectory = std::filesystem::path(argv[++i]);
+                    pathToSaveDirectory = PrepareDownloadDirectory(pathToSaveDirectory);
+                    std::cout << "-d correctly set to " << pathToSaveDirectory << std::endl;
+                }else{
+                    throw std::invalid_argument("Missing folder path after -d option.");
+                }
+            }else if(arg == "-p"){
+                if (i + 1 < argc) {
+                    long long percentLL = stoll(std::string(argv[++i]));
+                    if(percentLL < 0){
+                        throw std::invalid_argument("Percent to download can not be negative.");
+                    }else if(percentLL == 0){
+                        throw std::invalid_argument("Percent to download can not be 0.");
+                    }else if(percentLL > 100){
+                        std::invalid_argument("Percent to download can not be more than 100.");
+                    }else {
+                        percent = (size_t)percentLL;
+                        std::cout << "-p correctly set to  " << percent << std::endl;
+                    }
+                }else{
+                    throw std::invalid_argument("Missing percent to downaload after -p option.");                    
+                }
+            }else if (arg == "-no-check") {
+                doCheck = false;
+                std::cout << "Integrity check will be skipped."<< std::endl;
+            }else {
+                pathToTorrentFile = std::filesystem::path(arg);
+                if (!std::filesystem::exists(pathToTorrentFile)) {
+                    std::cerr << "Torrent file in " << arg << " does not exist." << std::endl;
                     return 1;
                 }
-                i++;
-                std::cout << "-d correctly passed " << pathToSaveDirectory << std::endl;
-            }else{
-                std::cout << "Missing folder path after -d option." << std::endl;
-                return 1;
-            }
-        }else if(arg == "-p"){
-            if (i + 1 < argc) {
-                long long percentLL = stoll(std::string(argv[i + 1]));
-                if(percentLL < 0){
-                    std::cout << "Percent to download can not be negative." << std::endl;
-                    return 1;
-                }else if(percentLL == 0){
-                    std::cout << "Percent to download can not be 0." << std::endl;
-                    return 1;
-                }else if(percentLL > 100){
-                    std::cout << "Percent to download can not be more than 100." << std::endl;
-                    return 1;
-                }else {
-                    percent = (size_t)percentLL;
-                    i++;
-                    std::cout << "-p correctly passed " << percent << std::endl;
-                }
-            }else{
-                std::cout << "Missing percent to downaload after -p option." << std::endl;
-                return 1;
-            }
-        }else{
-            pathToTorrentFile = std::filesystem::path(arg);
-            if(!std::filesystem::exists(pathToTorrentFile)){
-                std::cout << "Torrent file in " << arg << " does not exist." << std::endl;
-                return 1;
             }
         }
-    }
+        if(percent == -1){
+            std::cout << "Missing -p parameter, set default value 100" << std::endl;
+            percent = 100;
+        }
+        if(pathToSaveDirectory.empty()){
+            std::cout << "Missing -d parameter, set default value to ~/Downloads";
+            pathToSaveDirectory = PrepareDownloadDirectory(
+                std::filesystem::path(std::string(std::getenv("HOME") ? std::getenv("HOME") : ".")) / "Downloads");
+        }
+        TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent);
+        std::cout << "end of main.cpp, file has been saved successfully" << std::endl;
 
-    TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent);
-    std::cout << "end of main.cpp file was downloaded "<<std::endl;
-
-    }catch (const char* exception){
-        std::cout << "Exception occurred: in main" << exception << std::endl;
+    }catch (const std::exception& e){
+        std::cout << "Exception occurred in main: " << e.what() << std::endl;
         return 1;
     }
     return 0;

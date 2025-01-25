@@ -13,25 +13,25 @@ PieceStorage::PieceStorage(const TorrentFile& tf, const std::filesystem::path& o
     if (totalBytesWanted == 0 && percent > 0) {
         totalBytesWanted = 1; 
     }
+    // round up to full piece 
     piecesToDownload = std::min(tf.pieceHashes.size(), (totalBytesWanted + tf.pieceLength - 1) / tf.pieceLength);
     std::cout << "constructor Piece storage, expected number of pieces is " << piecesToDownload << std::endl;
 
     
-    for(size_t i = 0; i < piecesToDownload; ++i){// 3
+    for(size_t i = 0; i < piecesToDownload; ++i){
         size_t pieceSize = tf.pieceLength;
         size_t pieceEnd = (i + 1) * tf.pieceLength;
         if(pieceEnd > tf.length){
             pieceSize = tf.length - i * tf.pieceLength;
         }
-        std::cout << "i is " << i << "pieceSize " << pieceSize << std::endl;
         remainPieces_.push(
             std::make_shared<Piece>(Piece(i, pieceSize, tf.pieceHashes[i]))
             );
     }
     
     file.open(path_file);
-    file.seekp(tf.length - 1);
-    file.write("", 1);
+    // file.seekp(tf.length - 1);
+    // file.write("", 1);
 }
 
 
