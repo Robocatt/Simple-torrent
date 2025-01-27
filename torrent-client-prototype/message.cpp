@@ -13,40 +13,40 @@ Message Message::Parse(const std::string& messageString){
         ms.payload = "";
        return ms;
     }
-
+    ms.l = spdlog::get("mainLogger");
     if(messageString[0] == char(0)){
         ms.id = MessageId::Choke;
-        // std::cout << "id set to" << " choke " << std::endl;
+        ms.l->trace("Message Parse, type: Choke");
     }else if(messageString[0] == char(1)){
         ms.id = MessageId::Unchoke;
-        // std::cout << "id set to" << " unchoke " << std::endl;
+        ms.l->trace("Message Parse, type: Unchoke");
     }else if(messageString[0] == char(2)){
         ms.id = MessageId::Interested;
-        // std::cout << "id set to" << " Interested " << std::endl;
+        ms.l->trace("Message Parse, type: Interested");
     }else if(messageString[0] == char(3)){
         ms.id = MessageId::NotInterested;
-        // std::cout << "id set to" << " NotInterested " << std::endl;
+        ms.l->trace("Message Parse, type: NotInterested");
     }else if(messageString[0] == char(4)){
         ms.id = MessageId::Have;
-        // std::cout << "id set to" << " Have " << std::endl;
+        ms.l->trace("Message Parse, type: Have");
     }else if(messageString[0] == char(5)){
         ms.id = MessageId::BitField;
-        // std::cout << "id set to" << " BitField " << std::endl;
+        ms.l->trace("Message Parse, type: BitField");
     }else if(messageString[0] == char(6)){
         ms.id = MessageId::Request;
-        // std::cout << "id set to" << " Request " << std::endl;
+        ms.l->trace("Message Parse, type: Request");
     }else if(messageString[0] == char(7)){
         ms.id = MessageId::Piece;
-        // std::cout << "id set to" << " Piece " << std::endl;
+        ms.l->trace("Message Parse, type: Piece");
     }else if(messageString[0] == char(8)){
         ms.id = MessageId::Cancel;
-        // std::cout << "id set to" << " Cancel " << std::endl;
+        ms.l->trace("Message Parse, type: Cancel");
     }else if(messageString[0] == char(9)){
         ms.id = MessageId::Port;
-        // std::cout << "id set to" << " Port " << std::endl;
+        ms.l->trace("Message Parse, type: Port");
     }else{
-        // std::cout << "id WAS NOT SET" << std::endl;
-        throw "bad type of message";
+        ms.l->error("Message Parse Received incorrect id");
+        throw std::runtime_error("Message Parse Received incorrect id");
     }
     ms.payload = messageString.substr(1);
     ms.messageLength = 1 + ms.payload.size();
@@ -56,6 +56,7 @@ Message Message::Parse(const std::string& messageString){
 
 Message Message::Init(MessageId id, const std::string& payload){
     Message ms;
+    ms.l = spdlog::get("mainLogger");
     ms.payload = payload;
     ms.id = id;
     if(id != MessageId::KeepAlive){
@@ -63,6 +64,7 @@ Message Message::Init(MessageId id, const std::string& payload){
     }else{
         ms.messageLength = 0;
     }
+    ms.l->trace("Message init success");
     return ms;
 }   
 
@@ -73,6 +75,7 @@ std::string Message::ToString() const{
         for(int i = 0; i < 4; ++i){
             result += char(0);
         }
+        l->trace("Message ToString keepalive");
         return result;
     }
     
@@ -81,44 +84,44 @@ std::string Message::ToString() const{
     if(id == MessageId::Choke){
         result += IntToBytes(1);
         result += char(0);
-        // std::cout << "to string added char 0 " << std::endl;
+        l->trace("Message ToString Choke");
     }else if(id == MessageId::Unchoke){
         result += IntToBytes(1);
         result += char(1);
-        // std::cout << "to string added char 1 " << std::endl;
+        l->trace("Message ToString Unchoke");
     }else if(id == MessageId::Interested){
         result += IntToBytes(1);
         result += char(2);
-        // std::cout << "to string added char 2 " << std::endl;
+        l->trace("Message ToString Interested");
     }else if(id == MessageId::NotInterested){
         result += IntToBytes(1);
         result += char(3);
-        // std::cout << "to string added char 3 " << std::endl;
+        l->trace("Message ToString NotInterested");
     }else if(id == MessageId::Have){
         result += IntToBytes(5);
         result += char(4);
-        // std::cout << "to string added char 4 " << std::endl;
+        l->trace("Message ToString Have");
     }else if(id == MessageId::BitField){
         result += char(5);
-        // std::cout << "to string added char 5 " << std::endl;
+        l->trace("Message ToString BitField");
     }else if(id == MessageId::Request){
         result += IntToBytes(13);
         result += char(6);
-        // std::cout << "to string added char 6 " << std::endl;
+        l->trace("Message ToString Request");
     }else if(id == MessageId::Piece){
         result += char(7);
-        // std::cout << "to string added char 7 " << std::endl;   
+        l->trace("Message ToString Piece");
     }else if(id == MessageId::Cancel){
         result += IntToBytes(13);
         result += char(8);
-        // std::cout << "to string added char 8 " << std::endl;
+        l->trace("Message ToString Cancel");
     }else if(id == MessageId::Port){
         result += IntToBytes(3);
         result += char(9);
-        // std::cout << "to string added char 9 " << std::endl;
+        l->trace("Message ToString Port");
     }else{
-        // std::cout << "to string NOTHING added" << std::endl;
-        throw "Bad id tostring";
+        l->error("Message ToString Cancel");
+        throw std::runtime_error("Message ToString Received incorrect id");
     }
     result += payload;
     return result;

@@ -44,6 +44,10 @@ notes.txt
 # cmake build folder
 cmake-build/
 
+# Logs build folder
+Logs/*
+!Logs/.gitkeep
+
 # folder for .torrent files for tests
 resources/*
 !resources/.gitkeep

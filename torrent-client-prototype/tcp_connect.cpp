@@ -17,6 +17,7 @@
 TcpConnect::TcpConnect(std::string ip, int port, std::chrono::milliseconds connectTimeout, std::chrono::milliseconds readTimeout) :
     ip_(ip), port_(port), connectTimeout_(connectTimeout), readTimeout_(readTimeout){
         sock_ = -1;
+        l = spdlog::get("mainLogger");
     }
 
 TcpConnect::~TcpConnect(){
@@ -36,8 +37,10 @@ void TcpConnect::EstablishConnection(){
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
     int getaddinfoStatus = getaddrinfo(ip_.c_str(), std::string(std::to_string(port_)).c_str(), &hints, &serverResult);
-    if(getaddinfoStatus != 0){
-        throw std::runtime_error("getaddrinfo fail: " + std::string(gai_strerror(getaddinfoStatus)));
+    if (getaddinfoStatus != 0) {
+        l->error("getaddrinfo fail: {}", gai_strerror(getaddinfoStatus));
+        throw std::runtime_error(
+            "getaddrinfo fail: " + std::string(gai_strerror(getaddinfoStatus)));
     }
 
     
@@ -51,8 +54,9 @@ void TcpConnect::EstablishConnection(){
         break;
     }
 
-    if(receivedNode == NULL){
+    if (receivedNode == NULL) {
         freeaddrinfo(serverResult);
+        l->error("Creating socket is not possible with current getaddrinfo");
         throw std::runtime_error("Creating socket is not possible with current getaddrinfo");
     }
 
@@ -60,6 +64,7 @@ void TcpConnect::EstablishConnection(){
     if(fcntlStatus < 0){
         close(sock_);
         freeaddrinfo(serverResult);
+        l->error("fcntl error");
         throw std::runtime_error("fcntl error");
     }
 
@@ -77,20 +82,25 @@ void TcpConnect::EstablishConnection(){
 
             int selectStatus = select(sock_ + 1, NULL, &writefds, NULL, &tv); 
             if(selectStatus < 0 && errno != EINTR){
+                l->error("Error connecting");
                 throw std::runtime_error("Error connecting");
-                }else if(selectStatus > 0){
-                socklen_t l = sizeof(int);
+            }else if(selectStatus > 0){
+                socklen_t le = sizeof(int);
                 int valopt; 
-                if (getsockopt(sock_, SOL_SOCKET, SO_ERROR, (void*)(&valopt), &l) < 0) { 
+                if (getsockopt(sock_, SOL_SOCKET, SO_ERROR, (void*)(&valopt), &le) < 0) { 
+                    l->error("Error in getsockopt()");
                     throw std::runtime_error("Error in getsockopt()");
                 } 
                 if (valopt) { 
+                    l->error("Error in delayed connection");
                     throw std::runtime_error("Error in delayed connection");
                 } 
             }else{
+                l->error("Timeout in select() - Cancelling!");
                 throw std::runtime_error("Timeout in select() - Cancelling!");
             } 
         }else{
+            l->error("Error connecting");
             throw std::runtime_error("Error connecting"); 
         }
     }
@@ -98,8 +108,10 @@ void TcpConnect::EstablishConnection(){
 
 void TcpConnect::SendData(const std::string& data) const{
     if (sock_ < 0) {
+        l->error("Invalid socket in send");
         throw std::runtime_error("Invalid socket in send");
     }
+
     if(data.empty()){
         return;
     }
@@ -112,8 +124,10 @@ void TcpConnect::SendData(const std::string& data) const{
             if(errno == EINTR){ // signal interrupt, resend
                 continue;
             }else if(errno == EAGAIN || errno == EWOULDBLOCK){
+                l->error("Error in send data, EAGAIN or EWOULDBLOCK");
                 throw std::runtime_error("Error in send data, EAGAIN or EWOULDBLOCK");
             }else{
+                l->error("Error in send data");
                 throw std::runtime_error("Error in send data ?");
             }
         }
@@ -123,10 +137,12 @@ void TcpConnect::SendData(const std::string& data) const{
 
 std::string TcpConnect::ReceiveData(size_t bufferSize) const{
     if (sock_ < 0) {
+        l->error("Invalid socket in receive");
         throw std::runtime_error("Invalid socket in receive");
     }
 
-    if(bufferSize > ((1 << 19) - 1)){
+    if (bufferSize > ((1 << 19) - 1)) {
+        l->error("Buffer size will be too large upper");
         throw std::runtime_error("Buffer size will be too large upper");
     }
 
@@ -135,75 +151,87 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) const{
     p.events = POLLIN;
 
     int poll_status = poll(&p, 1, readTimeout_.count());
-    // std::cerr << "Raw tcp code pure receive, peer " << GetIp() << "poll: " << poll_status << std::endl;
+    l->trace("Raw tcp code pure receive, peer {} poll: {}", GetIp(), poll_status);
+
     if(poll_status < 0){
+        l->error("poll status < 0");
         throw std::runtime_error("poll status < 0");
     }else if(poll_status == 0){
+        l->error("poll time out 0");
         throw std::runtime_error("poll time out 0 ");
     }else{
         if(p.revents & POLLIN){
             if(bufferSize != 0){
-                // std::cerr << "Raw tcp code pure receive, buffersize != 0 peer " << GetIp() << std::endl;
+                l->trace("Raw tcp code pure receive, buffersize != 0 peer {}", GetIp());
                 char buffer[bufferSize]; 
                 size_t recv_status = recv(sock_, buffer, sizeof(buffer), MSG_DONTWAIT );
-                if(recv_status < 0){
+                if (recv_status < 0) {
+                    l->error("recv < 0 error");
                     throw std::runtime_error("recv < 0 error");
-                }else if(recv_status > bufferSize){
+                } else if (static_cast<size_t>(recv_status) > bufferSize) {
+                    l->error("recv > buffersize");
                     throw std::runtime_error("recv > buffersize");
                 }
                 return std::string(buffer, recv_status);
             }else{
-                // std::cerr << "Raw tcp code pure receive, buffersize 0 peer " << GetIp() << std::endl;
+                l->trace("Raw tcp code pure receive, buffersize 0 peer {}", GetIp());
                 char buffer[4];  
-                
-                size_t recv_status = recv(sock_, buffer, sizeof(buffer), 0);
-                // std::cerr << "Raw tcp code pure receive, bf = 0,  peer " << GetIp()<< "recv status "<< recv_status << std::endl;
-                if(recv_status == 0){
+                ssize_t recv_status = recv(sock_, buffer, sizeof(buffer), 0);
+               
+                if (recv_status == 0) {
+                    l->error("recv = 0, buffersize = 4");
                     throw std::runtime_error("recv = 0, buffersize = 4");
-                }else if(recv_status < 0){
+                } else if (recv_status < 0) {
+                    l->error("recv < 0, buffersize = 4");
                     throw std::runtime_error("recv < 0, buffersize = 4");
                 }
 
                 std::string buffer_str = std::string(buffer, 4);
-
-                size_t recieved_size = BytesToInt(buffer_str);
+                size_t received_size = BytesToInt(buffer_str);
                 
-                if(recieved_size > ((1 << 19) - 1)){
+                if(received_size > ((1 << 19) - 1)){
+                    l->error("Buffer size will be too large");
                     throw std::runtime_error("Buffer size will be too large");
                 }
-                char new_buffer[recieved_size];
+                char new_buffer[received_size];
                 std::string data;
                 size_t bytesRead = 0;
-                size_t bytesToRead = recieved_size;
+                size_t bytesToRead = received_size;
 
                 int fcntlStatus = fcntl(sock_, F_GETFL, 0);
                 fcntlStatus &= ~O_NONBLOCK;
                 fcntl(sock_, F_SETFL, fcntlStatus);
 
-                // std::cerr << "Raw tcp code pure receive, bf = 0, fcntl set, before loop, peer " << GetIp() << std::endl;
+                l->trace("Raw tcp code pure receive, bf = 0, fcntl set, before loop, peer {}", GetIp());
                 auto startTime = std::chrono::steady_clock::now();
                 do{
                     auto diff = std::chrono::steady_clock::now() - startTime;
-                    if (std::chrono::duration_cast<std::chrono::milliseconds> (diff) > readTimeout_ / 2){
+                    if (std::chrono::duration_cast<std::chrono::milliseconds>(diff) > (readTimeout_ / 2)) {
+                        l->error("Read timeout");
                         throw std::runtime_error("Read timeout");
                     }
                     
-                    bytesRead = recv(sock_, new_buffer, recieved_size, 0);
-                    // std::cerr << "Raw tcp code pure receive, peer " << GetIp() << "in loop, cur diff in time " << diff << " cur read " << bytesRead << std::endl;
-                    if (bytesRead <= 0){
+                   ssize_t readNow = recv(sock_, new_buffer, received_size, 0);
+                    l->trace("Raw tcp code pure receive, peer {}, in loop, cur diff in time {} ms, cur read {}",
+                        GetIp(),
+                        std::chrono::duration_cast<std::chrono::milliseconds>(diff).count(),
+                        readNow);
+
+                    if (readNow <= 0) {
+                        l->error("recv < 0");
                         throw std::runtime_error("recv < 0");
                     }
-                    bytesToRead -= bytesRead;
-                    data += std::string(new_buffer, bytesRead);
-                }
-                while (bytesToRead > 0);
+                    bytesToRead -= static_cast<size_t>(readNow);
+                    data.append(new_buffer, static_cast<size_t>(readNow));
+                } while (bytesToRead > 0);
 
-                // std::cerr << "Raw tcp code pure receive,  AFTER loop, peer " << GetIp() << std::endl;
+                l->trace("Raw tcp code pure receive, AFTER loop, peer {}", GetIp());
                 fcntlStatus |= O_NONBLOCK;
                 fcntl(sock_, F_SETFL, fcntlStatus);
                 return data;
             }
         }else{
+            l->error("POLLIN failed");
             throw std::runtime_error("POLLIN failed");
         }
     }

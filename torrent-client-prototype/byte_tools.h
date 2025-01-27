@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <cstdint>
 
 /*
  * Преобразовать 4 байта в формате big endian в int

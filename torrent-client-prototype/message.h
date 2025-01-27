@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdint>
 #include <string>
+#include <cstdlib>
+#include "spdlog/spdlog.h"
 
 /*
  * Тип сообщения в протоколе торрента.
@@ -25,6 +26,7 @@ struct Message {
     MessageId id;
     size_t messageLength;
     std::string payload;
+    std::shared_ptr<spdlog::logger> l;
 
     /*
      * Выделяем тип сообщения и длину и создаем объект типа Message.

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "spdlog/spdlog.h"
 
 struct TorrentFile {
     std::vector<std::string> announceList;
@@ -17,6 +18,7 @@ struct TorrentFile {
     std::string publisher;
     std::string publisherURL;
     bool multipleFiles;
+    std::shared_ptr<spdlog::logger> l;
 };
 
 TorrentFile LoadTorrentFile(const std::string& filename);
