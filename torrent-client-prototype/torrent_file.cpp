@@ -4,16 +4,8 @@
 #include <vector>
 #include <openssl/sha.h>
 #include <fstream>
-#include <variant>
-#include <sstream>
-#include <iostream>
 #include <stdexcept>
 
-
-
-
-#include <typeinfo>
-#include <cxxabi.h>
 
 
 void populateAnnounceList(const Bencode::bencodeList& list, TorrentFile& TFile){
@@ -25,7 +17,6 @@ void populateAnnounceList(const Bencode::bencodeList& list, TorrentFile& TFile){
             } else if constexpr (std::is_same_v<T, size_t>) {
                 throw std::runtime_error("Torrent parser visit integer in announce list");
             } else if constexpr (std::is_same_v<T, std::unique_ptr<Bencode::bencodeList>>) {
-                // std::cout << "Nested List:\n";
                 populateAnnounceList(*value, TFile);
             }
         }, el);
@@ -37,6 +28,7 @@ TorrentFile LoadTorrentFile(const std::string& filename){
     std::ifstream file(filename, std::ios::binary);
     
     if (!file) {
+        spdlog::get("mainLogger")->error("Error opening file: {}", filename);
         throw std::runtime_error("Error opening file");
     }
 
@@ -48,17 +40,14 @@ TorrentFile LoadTorrentFile(const std::string& filename){
 
     
     int cur_pos = 1;
-    // std::cout << data << "\n";
-    // std::cout << data.size() << "\n\n\n\n"<< std::endl;
-    
     TorrentFile TFile;
+    TFile.l = spdlog::get("mainLogger");
     
     while(cur_pos != data.size() - 1){
-        // std::cout << "first thing was called" << std::endl;
         auto global_key = Bencode::ParseString(data.substr(cur_pos));
         cur_pos += global_key.second;
         if(global_key.first == "announce"){
-            std::cout << "announce was called"<< std::endl;
+            TFile.l->info("announce was called");
             auto res = Bencode::ParseString(data.substr(cur_pos));
             if(TFile.announceList.empty()){
                 TFile.announceList.emplace_back(res.first);
@@ -68,11 +57,10 @@ TorrentFile LoadTorrentFile(const std::string& filename){
         //3 variants are possible see http://bittorrent.org/beps/bep_0012.html
 
         else if(global_key.first == "info"){
-            std::cout << "info was called"<< std::endl;
+            TFile.l->info("info was called");
             auto res = Bencode::ParseDictRec(data.substr(cur_pos));
-            std::cout << "info was called, dict parsed"<< std::endl;
+            TFile.l->info("info was called, dict parsed");
             try{
-                // std::cerr << "string for SHA1 for info_hash " << data.substr(cur_pos, res.second) << "\n";
                 TFile.infoHash = CalculateSHA1(data.substr(cur_pos, res.second));
                 cur_pos += res.second;
                 for(const auto& [key, val] : res.first->elements ){
@@ -103,9 +91,9 @@ TorrentFile LoadTorrentFile(const std::string& filename){
                 }
             }
             catch(std::exception& e){
-                std::cerr << "Load torrent file exception in info " << e.what() << std::endl; 
+                TFile.l->error("Load torrent file exception in info: {}", e.what());
             }
-            std::cout << "after info\n";
+            TFile.l->trace("after info");
         }else if(global_key.first == "announce-list"){
             // need to change for backups rather then a single list 
             // auto res = Bencode::ParseList(data.substr(cur_pos));
@@ -122,61 +110,65 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             // rewrite as not void function 
             populateAnnounceList(*res.first, TFile);
 
-            std::cout << "announce list called, total links: " << TFile.announceList.size() << "\n";
-            for(auto elem : TFile.announceList){
-                std::cout << elem << "\n";
+            TFile.l->info("announce list called, total links: {}", TFile.announceList.size());
+            for (const auto& elem : TFile.announceList) {
+                TFile.l->trace("{}", elem);
             }
         }else if(global_key.first == "creation date"){
-            std::cout << "creation date was called\n";
+            TFile.l->info("creation date was called");
             auto res = Bencode::ParseInt(data.substr(cur_pos));
             TFile.creationDate = res.first;
             cur_pos += res.second;
         }else if(global_key.first == "comment"){
-            std::cout << "comment was called\n";
+            TFile.l->info("comment was called");
             auto res = Bencode::ParseString(data.substr(cur_pos));
             TFile.comment = res.first;
             cur_pos += res.second;
         }else if(global_key.first == "created by"){
-            std::cout << "created by was called"<< std::endl;
+            TFile.l->info("created by was called");
             auto res = Bencode::ParseString(data.substr(cur_pos));
             TFile.createdBy = res.first;
             cur_pos += res.second;
         }else if(global_key.first == "private"){
+            TFile.l->info("private by was called");
             auto res = Bencode::ParseInt(data.substr(cur_pos));
             cur_pos += res.second;
             int private_value = res.first;//maybe i'll need it 
         }else if(global_key.first == "url-list"){
+            TFile.l->info("url-list was called");
             auto res = Bencode::ParseListRec(data.substr(cur_pos));
             cur_pos += res.second;
             // std::cout << "url-list does not supported in this task"<< std::endl;
         }else if (global_key.first == "httpseeds"){
+            TFile.l->info("httpseeds was called");
             auto res = Bencode::ParseListRec(data.substr(cur_pos));
             cur_pos += res.second;
         }else if (global_key.first == "encoding"){
-            std::cout << "encoding was called\n";
+            TFile.l->info("encoding was called");
             auto res = Bencode::ParseString(data.substr(cur_pos));
             cur_pos += res.second;
             TFile.encoding = res.first;
             if(res.first != "UTF-8"){
+                TFile.l->error("Torrent parser encoding is not UTF-8");
                 throw std::runtime_error("Torrent parser encoding is not UTF-8");
             }
         }else if (global_key.first == "publisher"){
+            TFile.l->info("publisher was called");
             auto res = Bencode::ParseString(data.substr(cur_pos));
             cur_pos += res.second;
             TFile.publisher = res.first;
         }else if (global_key.first == "publisher-url"){
+            TFile.l->info("publisher-url was called");
             auto res = Bencode::ParseString(data.substr(cur_pos));
             cur_pos += res.second;
             TFile.publisherURL = res.first;
         }else{
-            std::cout<< "TORRENT FILE STARNGE KEY IS " << global_key.first << std::endl;
+            TFile.l->warn("TORRENT FILE STRANGE KEY IS {}", global_key.first);
         }
     }
-    std::cout << "parsed announce 1" << TFile.announceList[0] << std::endl;
-    // std::cout << TFile.comment << std::endl;
-    // std::cout << TFile.pieceLength << std::endl;
-    // std::cout << TFile.length << std::endl;
-    // std::cout << TFile.name << std::endl;
+    if (!TFile.announceList.empty()) {
+        TFile.l->info("parsed announce 1 {}", TFile.announceList[0]);
+    }
 
 
     return TFile;

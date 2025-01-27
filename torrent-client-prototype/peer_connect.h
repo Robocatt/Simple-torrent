@@ -68,6 +68,7 @@ private:
     PieceStorage& pieceStorage_;
     bool pendingBlock_;  // уже послали запрос на скачивание части файла и ждем ответ
     bool failed_;  // соединение не удалось установить или оно было разорвано в результате ошибки
+    std::shared_ptr<spdlog::logger> l;
 
     /*
      * Функция производит handshake.

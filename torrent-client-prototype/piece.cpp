@@ -1,7 +1,5 @@
 #include "byte_tools.h"
 #include "piece.h"
-#include <iostream>
-#include <algorithm>
 
 constexpr size_t BLOCK_SIZE = 1 << 14;
 

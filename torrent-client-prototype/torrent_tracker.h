@@ -1,9 +1,9 @@
 #pragma once
 
 #include <string>
-#include <iostream>
 #include "torrent_file.h"
 #include "peer.h"
+#include "spdlog/spdlog.h"
 
 class TorrentTracker {
 public:
@@ -35,4 +35,5 @@ private:
     std::vector<Peer> peers_;
     // especially for bt.t-ru.org
     std::string pk;
+    std::shared_ptr<spdlog::logger> l;
 };

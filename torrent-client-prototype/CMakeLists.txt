@@ -13,10 +13,20 @@ include_directories(${OPENSSL_INCLUDE_DIR})
 
 include(FetchContent)
 
+# Fetch cpr
 set(CPR_USE_SYSTEM_CURL ON)
 FetchContent_Declare(cpr GIT_REPOSITORY https://github.com/libcpr/cpr.git
         GIT_TAG dec9422db3af470641f8b0d90e4b451c4daebf64) # The commit hash for 1.11.1. Replace with the latest from: https://github.com/libcpr/cpr/releases
 FetchContent_MakeAvailable(cpr)
+
+
+# Fetch spdlog
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG 8e5613379f5140fefb0b60412fbf1f5406e7c7f8 # The commit hash for 1.15.0
+)
+FetchContent_MakeAvailable(spdlog)
 
 add_executable(
         ${PROJECT_NAME}
@@ -41,5 +51,5 @@ add_executable(
         piece.cpp
         piece.h
 )
-target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_LIBRARIES} cpr::cpr)
+target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_LIBRARIES} cpr::cpr spdlog::spdlog)
 

@@ -1,10 +1,8 @@
 #include "byte_tools.h"
 #include "peer_connect.h"
 #include "message.h"
-#include <iostream>
 #include <sstream>
 #include <utility>
-#include <cassert>
 
 //debug
 #include <fstream>
@@ -36,26 +34,23 @@ void PeerPiecesAvailability::SetPieceAvailability(size_t pieceIndex){
     size_t bit_pos = pieceIndex % 8;
     
     if(bitfield_.size() <= pos){
-
         throw std::runtime_error("Invalid bitfield size");
-    }
-    if(pos >= bitfield_.size()){// will never execute because of error above!!!
-        bitfield_.resize(pos + 1, char(0));// 0 or char(0)?
     }
     bitfield_[pos]  |= (1 << (7 - bit_pos));
 }
 
 size_t PeerPiecesAvailability::Size() const{
     return bitfield_.size() * 8;
-
 }
 
 PeerConnect::PeerConnect(const Peer& peer, const TorrentFile &tf, std::string selfPeerId, PieceStorage& pieceStorage) :
  tf_(tf), selfPeerId_(selfPeerId), terminated_(false), choked_(true),
  socket_(TcpConnect (peer.ip, peer.port, std::chrono::milliseconds(2000), std::chrono::milliseconds(4000))), pieceInProgress_(nullptr), pieceStorage_(pieceStorage), pendingBlock_(false) {
     //changing std::chrono::milliseconds(8000) breaks code 
-    std::cout << "RUN PEER WITH IP " << peer.ip << std::endl;
+    l = spdlog::get("mainLogger");
+    l->trace("RUN PEER WITH IP : {}", peer.ip);
     if(selfPeerId_.size() != 20){
+        l->error("Self id is not 20 bytes long");
         throw std::runtime_error("Self id is not 20 bytes long");
     }
  }
@@ -63,10 +58,10 @@ PeerConnect::PeerConnect(const Peer& peer, const TorrentFile &tf, std::string se
 void PeerConnect::Run() {
     while (!terminated_) {
         if (EstablishConnection()) {
-            std::cout << "Connection established to peer " << socket_.GetIp() <<  std::endl;
+            l->info("Connection established to peer {}", socket_.GetIp());
             MainLoop();
         } else {
-            std::cerr << "Cannot establish connection to peer " << socket_.GetIp() << std::endl;
+            l->info("Cannot establish connection to peer {}", socket_.GetIp());
             Terminate();
         }
     }
@@ -85,12 +80,15 @@ void PeerConnect::PerformHandshake() {
     std::string handshake_recieved = socket_.ReceiveData(68);
     
     if((unsigned char)handshake_recieved[0] != 19){
+        l->info("Peer {} 1 Not a BIttorrent", socket_.GetIp());
         throw std::runtime_error("1 Not a BIttorrent");
     }
     if(handshake_recieved.substr(1, 19) != "BitTorrent protocol"){
+        l->info("Peer {} 2 Not a BIttorrent", socket_.GetIp());
         throw std::runtime_error("2 Not a BIttorrent");
     }
     if(handshake_recieved.substr(28, 20) != tf_.infoHash){
+        l->info("Peer {} 3 Not a BIttorrent", socket_.GetIp());
         throw std::runtime_error("3 Not a BIttorrent");
     }
     
@@ -104,8 +102,7 @@ bool PeerConnect::EstablishConnection() {
         SendInterested();
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Failed to establish connection with peer " << socket_.GetIp() << ":" <<
-            socket_.GetPort() << " -- " << e.what() << std::endl;
+        l->info("Failed to establish connection with peer {}:{} -- {}", socket_.GetIp(),socket_.GetPort(), e.what() );
         return false;
     }
 }
@@ -114,6 +111,7 @@ void PeerConnect::ReceiveBitfield() {
     std::string bitfield = socket_.ReceiveData();
     Message ms = Message::Parse(bitfield);
     if(bitfield.size() == 0){
+        l->info("Peer {} bitfield size < 0", socket_.GetIp());
         throw std::runtime_error("bitfield size < 0");
     }
     if(ms.id == MessageId::BitField){
@@ -122,7 +120,7 @@ void PeerConnect::ReceiveBitfield() {
     }else if(ms.id == MessageId::Unchoke){
         choked_ = false;
     }else{
-    
+        l->info("Message type Neither 1 nor 5");
         throw std::runtime_error("Message type Neither 1 nor 5");
     }
 }
@@ -135,7 +133,7 @@ void PeerConnect::SendInterested() {
 }
 
 void PeerConnect::Terminate() {
-    std::cerr << "Terminate, peer "<< socket_.GetIp() << std::endl;
+    l->warn("Terminate, peer {}", socket_.GetIp());
     terminated_ = true;
 }
 
@@ -164,15 +162,14 @@ void PeerConnect::RequestPiece() {
     payload += IntToBytes(pieceInProgress_->GetIndex());
     payload += IntToBytes(pieceInProgress_->FirstMissingBlock()->offset);
     payload += IntToBytes(pieceInProgress_->FirstMissingBlock()->length);
-    
-    std::cout << socket_.GetIp() << " peer, requested piece index " << pieceInProgress_->GetIndex() << " offset " << pieceInProgress_->FirstMissingBlock()->offset<< std::endl;
+    l->trace("{} peer, requested piece index {} with offset {}",socket_.GetIp(), pieceInProgress_->GetIndex(), pieceInProgress_->FirstMissingBlock()->offset);
     
     pieceInProgress_->FirstMissingBlock()->status = Block::Status::Pending;
     
     Message ms;
     ms = ms.Init(MessageId::Request, payload);
     socket_.SendData(ms.ToString());
-    std::cout << socket_.GetIp() << " peer after data send" << std::endl;
+    l->trace("{} peer after data send", socket_.GetIp());
     pendingBlock_ = true;
     
 }
@@ -181,53 +178,70 @@ void PeerConnect::RequestPiece() {
 void PeerConnect::MainLoop() {
     while (!terminated_) {
         std::string receivedData;
-        std::cout << socket_.GetIp() << " peer, PeerConnect::MainLoop BEFORE receive from socket" << std::endl;
-        try{
+        l->trace("{} peer, PeerConnect::MainLoop BEFORE receive from socket", socket_.GetIp());
+
+        try {
             receivedData = socket_.ReceiveData();
-        }catch(const std::exception& e){
-            std::cerr << socket_.GetIp() << " peer, Error in receiveData, del piece, term the peer " << " " << e.what() << std::endl;
-            // will be mismatch in hash and the piece ll be returned to queue
-            if(pieceInProgress_){
+        } catch (const std::exception& e) {
+            l->error("{} peer, Error in receiveData, del piece, term the peer: {}", socket_.GetIp(), e.what());
+
+            // Handle mismatched hash and return the piece to the queue
+            if (pieceInProgress_) {
                 pieceStorage_.PieceProcessed(pieceInProgress_);
             }
+
             Terminate();
             break;
         }
-        std::cout << socket_.GetIp() << " peer, after receive from socket" << std::endl;
-        Message ms = ms.Parse(receivedData);
-        if(ms.id == MessageId::Have){
-            size_t index_of_bit_to_be_set = BytesToInt(ms.payload);
-            piecesAvailability_.SetPieceAvailability(index_of_bit_to_be_set);
-        }else if(ms.id == MessageId::KeepAlive){
-            socket_.updateConnectionTimeout();
-            std::cout << "PeerConnect main loop, received keep alive, update connection timeout for peer " << 
-            socket_.GetIp() << std::endl;
-        }else if(ms.id == MessageId::Choke){
-            choked_ = true;
-        }else if(ms.id == MessageId::Unchoke){
-            choked_ = false;
-        }else if(ms.id == MessageId::Piece){
-            pendingBlock_ = false;
-            size_t index_recieved = BytesToInt(ms.payload.substr(0,4));
-            size_t begin_recieved = BytesToInt(ms.payload.substr(4,4));
-            std::string data_recieved = ms.payload.substr(8);
-            // if(!pieceInProgress_->AllBlocksRetrieved()){
-                pieceInProgress_->SaveBlock(begin_recieved, data_recieved);
-            // }
-            std::cout << "In main loop, peer: "<< socket_.GetIp() << " ";
-            std::cout << "index " << index_recieved << " offset " << begin_recieved << " saved "<< std::endl;
-        }else{
-            std::cout << socket_.GetIp() << "BEFORE ERROR THROW ";
-            std::cout << (ms.payload == "" ? "empty payload" : ms.payload) << std::endl;
 
-            throw std::runtime_error("Sth bad occured in main loop");
+        l->trace("{} peer, AFTER receive from socket", socket_.GetIp());
+
+        Message ms = ms.Parse(receivedData);
+        
+        switch (ms.id) {
+            case MessageId::Have: {
+                size_t index_of_bit_to_be_set = BytesToInt(ms.payload);
+                piecesAvailability_.SetPieceAvailability(index_of_bit_to_be_set);
+                break;
+            }
+            case MessageId::KeepAlive: {
+                socket_.updateConnectionTimeout();
+                l->trace("PeerConnect main loop, received keep-alive, updated connection timeout for peer {}", socket_.GetIp());
+                break;
+            }
+            case MessageId::Choke: {
+                choked_ = true;
+                break;
+            }
+            case MessageId::Unchoke: {
+                choked_ = false;
+                break;
+            }
+            case MessageId::Piece: {
+                pendingBlock_ = false;
+                size_t index_received = BytesToInt(ms.payload.substr(0, 4));
+                size_t begin_received = BytesToInt(ms.payload.substr(4, 4));
+                std::string data_received = ms.payload.substr(8);
+
+                pieceInProgress_->SaveBlock(begin_received, data_received);
+
+                l->trace("In main loop, peer: {} index {} offset {} saved", socket_.GetIp(), index_received, begin_received);
+                break;
+            }
+            default: {
+                l->error("{} peer BEFORE ERROR THROW: {}", socket_.GetIp(), ms.payload.empty() ? "empty payload" : ms.payload);
+                throw std::runtime_error("Something bad occurred in main loop");
+            }
         }
 
         if (!choked_ && !pendingBlock_) {
             RequestPiece();
         }
-        std::cout << socket_.GetIp() << " peer, requested piece, back to loop, terminated?"<< terminated_ << std::endl;
+
+        l->trace("{} peer, requested piece, back to loop, terminated? {}", socket_.GetIp(), terminated_);
     }
-    std::cout << socket_.GetIp() << " peer, Main loop ended"   << std::endl;
+
+    l->trace("{} peer, Main loop ended", socket_.GetIp());
 }
+
 

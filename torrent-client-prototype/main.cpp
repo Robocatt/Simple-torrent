@@ -10,6 +10,9 @@
 #include <string>
 #include <system_error>
 #include <algorithm>
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/sinks/basic_file_sink.h"
 
 
 const int peerRequestsForTrackerLimit = 10;
@@ -26,23 +29,52 @@ std::string RandomString(size_t length) {
 
 const std::string PeerId = "TESTAPPDONTWORRY" + RandomString(4);
 
+
+void logInit(){
+    // main log for the user with WARNS and above 
+    auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    consoleSink->set_level(spdlog::level::warn);
+    
+    // debug log for all messages 
+    auto debugLogFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Logs/debug.log");
+    debugLogFileSink->set_level(spdlog::level::trace);
+
+    std::shared_ptr<spdlog::logger> logger = std::make_shared<spdlog::logger>("mainLogger");
+    logger->sinks().push_back(consoleSink);
+    logger->sinks().push_back(debugLogFileSink);
+    logger->set_level(spdlog::level::trace);
+    logger->set_pattern("%d.%m.%Y %T [%^%l%$] [%n] %v");
+    spdlog::flush_every(std::chrono::seconds(5));
+
+    spdlog::register_logger(logger);
+    
+    // check the logger usability  
+    auto l = spdlog::get("mainLogger");
+    if(l){
+        l->info("mainLogger created and registered");
+    }
+}
+
 /**
  * If -no-check is NOT specified, this function is called to verify
  * that all downloaded pieces match their expected SHA1 hash.
  */
 void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces) {
-    std::cout << "Start downloaded pieces hash check for file: " << outputFilename << std::endl;
+    auto l = spdlog::get("mainLogger");
+    l->info("Start downloaded pieces hash check for file: {}", outputFilename.string());
     const auto& savedIndices = pieces.GetPiecesSavedToDiscIndices();
     
     if(savedIndices.empty()){
         if(std::filesystem::exists(outputFilename) &&
         std::filesystem::file_size(outputFilename) > 0){
+            l->error("Output file is not empty, but pieces were not marked as saved");
             throw std::runtime_error("Output file is not empty, but pieces were not marked as saved");
         }
         return;
     }
     
     if(!std::filesystem::exists(outputFilename)){
+        l->error("Output file does not exist!");
         throw std::runtime_error("Output file does not exist!");
     }
 
@@ -60,16 +92,19 @@ void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename,
 
     size_t actualSize = std::filesystem::file_size(outputFilename);
     if(expectedSize != actualSize){
-        throw std::runtime_error(
-            "Output file has incorrect size: expected = " + std::to_string(expectedSize) 
-            + ", actual = " + std::to_string(actualSize));
+        std::string errMsg = 
+            "Output file has incorrect size: expected = " + std::to_string(expectedSize) +
+            ", actual = " + std::to_string(actualSize);
+        l->error("{}", errMsg);
+        throw std::runtime_error(errMsg);
     }
 
 
     std::ifstream file(outputFilename, std::ios_base::binary);
     
-    if (!file.is_open()) {\
-        const std::string tmp = "sdg";
+    if (!file.is_open()) {
+        l->error("Cannot open file for integrity check: {} (no_such_file_or_directory)", 
+                 outputFilename.string());
         throw std::filesystem::filesystem_error(
             "Cannot open file for integrity check:", outputFilename,
             std::make_error_code(std::errc::no_such_file_or_directory)
@@ -85,6 +120,8 @@ void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename,
         
         file.seekg(static_cast<std::streamoff>(pieceOffset), std::ios::beg);
         if (!file.good()) {
+            l->error("Failed to seek to piece offset {} in file {}", 
+                     pieceOffset, outputFilename.string());
             throw std::filesystem::filesystem_error(
                 "Failed to seek to piece offset", outputFilename,
                 std::make_error_code(std::errc::no_such_file_or_directory)
@@ -95,21 +132,27 @@ void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename,
         size_t bytesRead = static_cast<std::size_t>(file.gcount());
         
         if (bytesRead != thisPieceSize) {
-            throw std::runtime_error(
-                "Could not read full piece from file. Expected " + 
-                std::to_string(thisPieceSize) + " bytes, got " + std::to_string(bytesRead)
-            );
+            std::string errMsg = 
+                "Could not read full piece from file. Expected " +
+                std::to_string(thisPieceSize) + " bytes, got " + std::to_string(bytesRead);
+            l->error("{}", errMsg);
+            throw std::runtime_error(errMsg);
         }
 
         const std::string realHash = CalculateSHA1(pieceDataFromFile);
         if (realHash != tf.pieceHashes[pieceIndex]) {
-            std::cerr << "File piece with index " << pieceIndex << " has incorrect hash\n Expected: "
-                      << HexEncode(tf.pieceHashes[pieceIndex]) << "\n Got : "
-                      << HexEncode(realHash) << std::endl;
-            throw std::runtime_error("Wrong piece hash for index " + std::to_string(pieceIndex));
+            l->error("File piece with index {} has incorrect hash\n"
+                     "Expected: {}\n"
+                     "Got: {}",
+                     pieceIndex,
+                     HexEncode(tf.pieceHashes[pieceIndex]),
+                     HexEncode(realHash));
+            throw std::runtime_error(
+                "Wrong piece hash for index " + std::to_string(pieceIndex)
+            );
         }
     }
-    std::cout << "All downloaded pieces has correct hash.\n";
+    l->info("All downloaded pieces have correct hash.");
     return;
 }
 
@@ -118,21 +161,24 @@ void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename,
 // }
 
 std::filesystem::path PrepareDownloadDirectory(const std::filesystem::path& userPath) {
+    auto l = spdlog::get("mainLogger");
     std::error_code ec;
     if (!std::filesystem::exists(userPath, ec)) {
         if (!std::filesystem::create_directories(userPath, ec) && ec) {
-            throw std::runtime_error(
-                "Failed to create directory " + userPath.string() + ": " + ec.message()
-            );
+            std::string errMsg = "Failed to create directory " + userPath.string() + 
+                                 ": " + ec.message();
+            l->error("{}", errMsg);
+            throw std::runtime_error(errMsg);
         }
-        std::cout << "Created directory: " << userPath.string() << std::endl;
+        l->info("Created directory: {}", userPath.string());
     }
     
     std::filesystem::perms perms = std::filesystem::status(userPath, ec).permissions();
     if (ec) {
-        throw std::runtime_error(
-            "Could not retrieve permissions for " + userPath.string() + ": " + ec.message()
-        );
+        std::string errMsg = "Could not retrieve permissions for " + 
+                             userPath.string() + ": " + ec.message();
+        l->error("{}", errMsg);
+        throw std::runtime_error(errMsg);
     }
     bool canWrite =
         ((perms & std::filesystem::perms::owner_write)  != std::filesystem::perms::none) ||
@@ -140,16 +186,17 @@ std::filesystem::path PrepareDownloadDirectory(const std::filesystem::path& user
         ((perms & std::filesystem::perms::others_write) != std::filesystem::perms::none);
 
     if (!canWrite) {
-        throw std::invalid_argument(
-            "Do not have permission to write to directory: " + userPath.string()
-        );
+        std::string errMsg = "Do not have permission to write to directory: " + 
+                             userPath.string();
+        l->error("{}", errMsg);
+        throw std::invalid_argument(errMsg);
     }
     return userPath;
 }
 
 bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile, const std::string& ourId, const TorrentTracker& tracker, size_t percent) {
     using namespace std::chrono_literals;
-
+    auto l = spdlog::get("mainLogger");
     std::vector<std::thread> peerThreads;
     std::vector<PeerConnect> peerConnections;
 
@@ -160,6 +207,7 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
     for (PeerConnect& peerConnect : peerConnections) {
         peerThreads.emplace_back(
                 [&peerConnect] () {
+                    auto lthread = spdlog::get("mainLogger");
                     bool tryAgain = true;
                     int attempts = 0;
                     do {
@@ -167,11 +215,11 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
                             ++attempts;
                             peerConnect.Run();
                         } catch (const std::runtime_error& e) {
-                            std::cerr << "Peer thread pool Runtime error: " << e.what() << std::endl;
+                        lthread->error("Peer thread pool Runtime error: {}", e.what());
                         } catch (const std::exception& e) {
-                            std::cerr << "Peer thread pool Exception: " << e.what() << std::endl;
+                            lthread->error("Peer thread pool Exception: {}", e.what());
                         } catch (...) {
-                            std::cerr << "Peer thread pool Unknown error" << std::endl;
+                            lthread->error("Peer thread pool Unknown error");
                         }
                         tryAgain = peerConnect.Failed() && attempts < 1;//change back to 3 ! debug only
                     } while (tryAgain);
@@ -180,14 +228,15 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
     }
 
     std::this_thread::sleep_for(10s);
-    std::cout << "Main thread awake after sleep, all jobs are set\n";
-    std::cout << "expected number of pieces : " << pieces.TotalPiecesCount() << "\n";
+    l->info("Main thread awake after sleep, all jobs are set");
+    l->info("Expected number of pieces: {}", pieces.TotalPiecesCount());
     while (pieces.PiecesSavedToDiscCount() < pieces.TotalPiecesCount()) {
-        std::cout << "in loop, PiecesSavedToDiscCount = " << pieces.PiecesSavedToDiscCount() << " ";
-        std::cout << "PiecesInProgressCount = " << pieces.PiecesInProgressCount() << " ";
-        std::cout << "peerThreads size = " << peerThreads.size() << "\n";
+        l->info("In loop, PiecesSavedToDiscCount = {}, PiecesInProgressCount = {}, peerThreads.size() = {}",
+                pieces.PiecesSavedToDiscCount(),
+                pieces.PiecesInProgressCount(),
+                peerThreads.size());
         if (pieces.PiecesInProgressCount() == 0) {
-            std::cout << "Want to download more pieces but all peer connections are not working. Let's request new peers" << std::endl;
+            l->warn("Want to download more pieces but all peer connections are not working. Requesting new peers...");
 
             for (PeerConnect& peerConnect : peerConnections) {
                 peerConnect.Terminate();
@@ -199,7 +248,7 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
         }
         std::this_thread::sleep_for(1s);
     }
-    std::cout << "All pieces are saved to disk\n";
+    l->info("All pieces are saved to disk");
 
     for (PeerConnect& peerConnect : peerConnections) {
         peerConnect.Terminate();
@@ -208,36 +257,36 @@ bool RunDownloadMultithread(PieceStorage& pieces, const TorrentFile& torrentFile
     for (std::thread& thread : peerThreads) {
         thread.join();
     }
-    std::cout << " END RunDownloadMultithread\n";
+    l->info("END RunDownloadMultithread");
     return true;
 }
 
 void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, const std::string& ourId, size_t percent) {
+    auto l = spdlog::get("mainLogger");
     int trackerIndex = 0;
     bool fileSaved = false;
     while(trackerIndex < torrentFile.announceList.size() && !fileSaved){
-        std::cout << "Connecting to tracker " << torrentFile.announceList[trackerIndex] << std::endl;
+        l->info("Connecting to tracker {}", torrentFile.announceList[trackerIndex]);
         TorrentTracker tracker(torrentFile.announceList[trackerIndex]);
-        std::cout << "after tracker constructor\n";
+        l->info("After tracker constructor");
         int peersReqestLimit = peerRequestsForTrackerLimit; // req limit if 0 peers received.
         bool requestMorePeers = true;
         do {
             try{
                 tracker.UpdatePeers(torrentFile, ourId, 12345);
             }catch(const std::exception& e){
-                std::cerr << "Error in update peers: " << e.what() << " ";
-                std::cerr << "Try next tracker " << std::endl;
+                l->warn("Error in update peers: {}. Try next tracker.", e.what());
                 requestMorePeers = false;
                 break;
             }
             if (tracker.GetPeers().empty()) {
-                std::cerr << "No peers found. Retry" << std::endl;
+                l->warn("No peers found. Retry...");
                 requestMorePeers = true;
                 peersReqestLimit--;
             }else{
-                std::cout << "Found " << tracker.GetPeers().size() << " peers" << std::endl;
+                l->info("Found {} peers", tracker.GetPeers().size());
                 for (const Peer& peer : tracker.GetPeers()) {
-                    std::cout << "Found peer " << peer.ip << ":" << peer.port << std::endl;
+                    l->info("Found peer {}:{}", peer.ip, peer.port);
                 }
                 fileSaved = RunDownloadMultithread(pieces, torrentFile, ourId, tracker, percent);
             }
@@ -246,23 +295,23 @@ void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, c
         trackerIndex++;
     }
     if(!fileSaved){
-        std::cerr << "need more peers but all trackers can not provide more\n";
+        l->error("Need more peers but all trackers can not provide more");
         return;
     }
-    std::cout << " END DownloadTorrentFile\n";
+    l->info("END DownloadTorrentFile");
 }
 
 void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::path& pathToSaveDirectory, size_t percent) {
     TorrentFile torrentFile;
-    
+    auto l = spdlog::get("mainLogger");
     try {
         torrentFile = LoadTorrentFile(file);
-        std::cout << "Loaded torrent file " << file << ". Comment: " << torrentFile.comment << std::endl;
+        l->info("Loaded torrent file {}. Comment: {}", file.string(), torrentFile.comment);
     } catch (const std::exception& e) {
-        std::cerr << e.what() << std::endl;
+        l->error("{}", e.what());
         return;
     }
-    std::cout << "test torrent file path " << pathToSaveDirectory << std::endl;
+    l->info("Test torrent file path: {}", pathToSaveDirectory.string());
     PieceStorage pieces(torrentFile, pathToSaveDirectory, percent);
     
     DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
@@ -272,11 +321,21 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
 
 }
 
+
 int main(int argc, char* argv[]) {
     try{
-        std::cout << "argc is " << argc << std::endl;
+        logInit();
+    }catch (const spdlog::spdlog_ex& ex){
+        std::cerr << "Log initialization failed: " << ex.what() << std::endl;
+        return 1;
+    }
+    std::shared_ptr<spdlog::logger> l = spdlog::get("mainLogger");
+
+
+    try{
+         l->info("argc = {}", argc);
         for (int i = 1; i < argc; ++i){
-            std::cout << argv[i] << std::endl;
+            l->info("Arg {}: {}", i, argv[i]);
         }
 
         std::filesystem::path pathToSaveDirectory{};
@@ -290,51 +349,64 @@ int main(int argc, char* argv[]) {
                 if (i + 1 < argc) {
                     pathToSaveDirectory = std::filesystem::path(argv[++i]);
                     pathToSaveDirectory = PrepareDownloadDirectory(pathToSaveDirectory);
-                    std::cout << "-d correctly set to " << pathToSaveDirectory << std::endl;
-                }else{
-                    throw std::invalid_argument("Missing folder path after -d option.");
+                    l->info("-d correctly set to {}", pathToSaveDirectory.string());
+                } else {
+                    std::string err = "Missing folder path after -d option.";
+                    l->error("{}", err);
+                    throw std::invalid_argument(err);
                 }
             }else if(arg == "-p"){
                 if (i + 1 < argc) {
                     long long percentLL = stoll(std::string(argv[++i]));
                     if(percentLL < 0){
-                        throw std::invalid_argument("Percent to download can not be negative.");
-                    }else if(percentLL == 0){
-                        throw std::invalid_argument("Percent to download can not be 0.");
-                    }else if(percentLL > 100){
-                        std::invalid_argument("Percent to download can not be more than 100.");
-                    }else {
-                        percent = (size_t)percentLL;
-                        std::cout << "-p correctly set to  " << percent << std::endl;
+                        std::string err = "Percent to download can not be negative.";
+                        l->error("{}", err);
+                        throw std::invalid_argument(err);
+                    } else if(percentLL == 0){
+                        std::string err = "Percent to download can not be 0.";
+                        l->error("{}", err);
+                        throw std::invalid_argument(err);
+                    } else if(percentLL > 100){
+                        std::string err = "Percent to download can not be more than 100.";
+                        l->error("{}", err);
+                        throw std::invalid_argument(err);
+                    } else {
+                        percent = static_cast<size_t>(percentLL);
+                        l->info("-p correctly set to {}", percent);
                     }
                 }else{
-                    throw std::invalid_argument("Missing percent to downaload after -p option.");                    
+                    std::string err = "Missing percent to download after -p option.";
+                    l->error("{}", err);
+                    throw std::invalid_argument(err);
                 }
             }else if (arg == "-no-check") {
                 doCheck = false;
-                std::cout << "Integrity check will be skipped."<< std::endl;
+                l->info("Integrity check will be skipped.");
             }else {
                 pathToTorrentFile = std::filesystem::path(arg);
                 if (!std::filesystem::exists(pathToTorrentFile)) {
-                    std::cerr << "Torrent file in " << arg << " does not exist." << std::endl;
+                    l->error("Torrent file '{}' does not exist.", arg);
                     return 1;
                 }
             }
         }
         if(percent == -1){
-            std::cout << "Missing -p parameter, set default value 100" << std::endl;
+            l->warn("Missing -p parameter, using default value 100");
             percent = 100;
         }
         if(pathToSaveDirectory.empty()){
-            std::cout << "Missing -d parameter, set default value to ~/Downloads";
+            l->warn("Missing -d parameter, using default value ~/Downloads");
             pathToSaveDirectory = PrepareDownloadDirectory(
-                std::filesystem::path(std::string(std::getenv("HOME") ? std::getenv("HOME") : ".")) / "Downloads");
+                std::filesystem::path(std::string(std::getenv("HOME") 
+                                                   ? std::getenv("HOME") 
+                                                   : ".")) / "Downloads"
+            );
         }
         TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent);
-        std::cout << "end of main.cpp, file has been saved successfully" << std::endl;
+        l->critical("End of main.cpp, file has been saved successfully");
 
     }catch (const std::exception& e){
-        std::cout << "Exception occurred in main: " << e.what() << std::endl;
+        l->error("Exception occurred in main: {}", e.what());
         return 1;
     }
     return 0;

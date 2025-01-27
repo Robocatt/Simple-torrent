@@ -8,6 +8,7 @@
 #include <mutex>
 #include <fstream>
 #include <filesystem>
+#include "spdlog/spdlog.h"
 
 /*
  * Хранилище информации о частях скачиваемого файла.
@@ -67,6 +68,7 @@ private:
     size_t pieces_in_progress;
     size_t piecesToDownload;
     const TorrentFile& tf_;
+    std::shared_ptr<spdlog::logger> l;
     /*
      * Сохраняет данную скачанную часть файла на диск.
      * Сохранение всех частей происходит в один выходной файл. Позиция записываемых данных зависит от индекса части

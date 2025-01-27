@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <iostream>
+#include "spdlog/spdlog.h"
 #include <chrono>
 
 /*
@@ -54,7 +54,7 @@ public:
 
     // Update connection timeout if keep alive received 
     void updateConnectionTimeout(){
-        std::cout<< "!Dummy update timout\n";
+        return;
     }
 
     const std::string& GetIp() const;
@@ -64,4 +64,5 @@ private:
     const int port_;
     std::chrono::milliseconds connectTimeout_, readTimeout_;
     int sock_;
+    std::shared_ptr<spdlog::logger> l;
 };

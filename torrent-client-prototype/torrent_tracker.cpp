@@ -7,10 +7,11 @@
 
 
 TorrentTracker::TorrentTracker(const std::string& url){
+    l = spdlog::get("mainLogger");
     long long pos = url.find("?");
     // fix for bt.t-ru.org
     // parse pk value and set as param
-    std::cout << "pos of ? symbol in torrentTracker constructor = " << pos <<"\n";
+    l->info("pos of ? symbol in torrentTracker constructor = {}", pos);
     if(pos != std::string::npos){
         url_ = url.substr(0, pos);
         pk = url.substr(pos + 4);
@@ -32,7 +33,7 @@ cpr::Proxies proxies{
     };
 
 void TorrentTracker::UpdatePeers(const TorrentFile& tf, std::string peerId, int port){
-    std::cerr << "Before update peers call"  << std::endl;
+    l->trace("Before update peers call");
     cpr::Session session;
     cpr::Url url{url_};
     cpr::Header header{
@@ -62,24 +63,22 @@ void TorrentTracker::UpdatePeers(const TorrentFile& tf, std::string peerId, int 
     session.SetParameters(params);
     cpr::Response res = session.Get();
     if(res.status_code != 200){
-        std::cerr << "!!!Update peers\n";
-        std::cerr <<"" << tf.infoHash << "\n";
-        std::cerr << res.text << std::endl;
+        l->error("Update peers, hash {} \n {}", tf.infoHash,res.text);
         throw std::runtime_error("status code " + std::to_string(res.status_code));
     }
-    std::cout << "Update peers, get respsonse, status code " << res.status_code << std::endl;
-    std::cout << res.text<< std::endl;
+    l->trace("Update peers, get respsonse, status code  {}\n {}",res.status_code, res.text);
 
     auto dict_response = Bencode::ParseDictRec(res.text); // Parse response
     auto& map_from_response = dict_response.first->elements; // get data out of pair 
     std::string peers;
     if(map_from_response.find("failure reason") != map_from_response.end()){
+        l->error("failed to update peers, error: {}", std::get<std::string>(map_from_response["failure reason"]));
         throw std::runtime_error("failed to update peers, error:" + std::get<std::string>(map_from_response["failure reason"]));
     }
     try{
         peers = std::get<std::string>(map_from_response["peers"]); // get raw peers string
     }catch(const std::exception& e){
-        std::cerr << "Torrent tracker peers not string\n";
+        l->error("Torrent tracker peers not string");
         throw std::runtime_error("123123 torrent tracker failed");
     }
     int peers_position = res.text.find("peers");    // shortcuts for a correct determination of number of peers
