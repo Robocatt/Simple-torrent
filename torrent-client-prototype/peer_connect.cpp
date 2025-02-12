@@ -46,7 +46,6 @@ size_t PeerPiecesAvailability::Size() const{
 PeerConnect::PeerConnect(const Peer& peer, const TorrentFile &tf, std::string selfPeerId, PieceStorage& pieceStorage) :
  tf_(tf), selfPeerId_(selfPeerId), terminated_(false), choked_(true),
  socket_(TcpConnect (peer.ip, peer.port, std::chrono::milliseconds(6000), std::chrono::milliseconds(6000))), pieceInProgress_(nullptr), pieceStorage_(pieceStorage), pendingBlock_(false) {
-    //changing std::chrono::milliseconds(8000) breaks code or not 
     l = spdlog::get("mainLogger");
     l->trace("RUN PEER WITH IP : {}", peer.ip);
     if(selfPeerId_.size() != 20){
@@ -77,7 +76,6 @@ void PeerConnect::PerformHandshake() {
     s += tf_.infoHash;
     s += selfPeerId_; 
     socket_.SendData(s);
-    // std::string handshake_recieved = socket_.ReceiveData(68);
     std::string handshake_recieved = socket_.ReceiveFixedSize(68);
     
     if((unsigned char)handshake_recieved[0] != 19){
@@ -99,43 +97,11 @@ void PeerConnect::PerformHandshake() {
 bool PeerConnect::EstablishConnection() {
     try {
         PerformHandshake();
-        // ReceiveBitfield();
         SendInterested();
         return true;
     } catch (const std::exception& e) {
         l->info("Failed to establish connection with peer {}:{} -- {}", socket_.GetIp(),socket_.GetPort(), e.what() );
         return false;
-    }
-}
-
-void PeerConnect::ReceiveBitfield() {
-    std::string messageData = socket_.ReceiveOneMessage();
-    Message ms = Message::Parse(messageData);
-    if (messageData.empty()) {
-        l->info("Peer {} sent an empty message", socket_.GetIp());
-        throw std::runtime_error("Empty message received");
-    }
-    switch (ms.id) {
-        case MessageId::BitField:{
-            std::string bitfield = messageData.substr(1);
-            piecesAvailability_ = PeerPiecesAvailability(bitfield);
-            l->trace("Received bitfield from peer {}", socket_.GetIp());
-            break;
-        }
-        case MessageId::Unchoke:{
-            choked_ = false;
-            l->trace("Peer {} is unchoking us", socket_.GetIp());
-            break;
-        }
-        case MessageId::Choke:{
-            choked_ = true;
-            l->trace("Peer {} is choking us", socket_.GetIp());
-            break;
-        }
-        default:{
-            l->info("Unexpected message type(not choke, unchoke, bitfield) {} from peer {}", (uint8_t)ms.id, socket_.GetIp());
-            throw std::runtime_error("Unexpected message type");
-        }
     }
 }
 
@@ -157,13 +123,16 @@ bool PeerConnect::Failed() const{
 
 
 void PeerConnect::RequestPiece() {
-    // here is bug somewhere. See output.txt
-    // why so many same requests? From where are they? 
     l->trace("In RequestPiece, peer {}", socket_.GetIp());
     if(pieceInProgress_ == nullptr){
         l->trace("In RequestPiece, peer {}, piece == null,try call GetNextPieceToDownload", socket_.GetIp());
         pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();
-        l->trace("In RequestPiece, peer {}, piece was null, get piece index {}", socket_.GetIp(), pieceInProgress_->GetIndex());
+        if(pieceInProgress_){
+            l->trace("In RequestPiece, peer {}, piece was null, get piece index {}", socket_.GetIp(), pieceInProgress_->GetIndex());
+        }else{
+            l->trace("In RequestPiece, peer {}, piece was null, and still null", socket_.GetIp());
+
+        }
     }else if(pieceInProgress_ && pieceInProgress_->AllBlocksRetrieved()){
         l->trace("In RequestPiece, peer {}, In else pieceInProgress", socket_.GetIp());
         pieceStorage_.PieceProcessed(pieceInProgress_);
@@ -237,6 +206,12 @@ void PeerConnect::MainLoop() {
             }
             case MessageId::BitField: {
                 std::string bitfield = ms.payload;
+                size_t expectedSize = (size_t)std::ceil(pieceStorage_.TotalPiecesCount() / 8.0);
+                if(expectedSize != ms.messageLength - 1) {
+                    l->warn("Bitfieldis of incorrect size, expected {}, got {}, terminating connection, peer {}",expectedSize, ms.messageLength, socket_.GetIp());
+                    Terminate();
+                    break;
+                }
                 piecesAvailability_ = PeerPiecesAvailability(bitfield);
                 l->trace("Received bitfield from {}", socket_.GetIp());
                 break;

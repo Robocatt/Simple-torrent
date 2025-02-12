@@ -348,7 +348,7 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
     // }
 }
 
-
+// add log level argument 
 int main(int argc, char* argv[]) {
     try{
         logInit();

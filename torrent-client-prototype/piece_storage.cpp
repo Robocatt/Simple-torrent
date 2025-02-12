@@ -137,7 +137,7 @@ void PieceStorage::initMultiFiles(const std::filesystem::path& outputDirectory, 
 
 
 PiecePtr PieceStorage::GetNextPieceToDownload() {
-    // std::lock_guard<std::mutex> lock(mtx);
+    std::lock_guard<std::mutex> lock(mtx);
     if(QueueIsEmpty()){
         l->info("QueueIsEmpty");
         return nullptr;
@@ -161,7 +161,7 @@ void PieceStorage::PieceProcessed(const PiecePtr& piece) {
 }
 
 bool PieceStorage::QueueIsEmpty() const {
-    std::lock_guard<std::mutex> lock(mtx);
+    // std::lock_guard<std::mutex> lock(mtx);
     return remainPieces_.empty();
 }
 

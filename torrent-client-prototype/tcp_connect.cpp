@@ -35,7 +35,6 @@ void TcpConnect::EstablishConnection(){
 
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    // hints.ai_flags = AI_PASSIVE;
     int getaddinfoStatus = getaddrinfo(ip_.c_str(), std::string(std::to_string(port_)).c_str(), &hints, &serverResult);
     if (getaddinfoStatus != 0) {
         l->error("getaddrinfo fail: {}", gai_strerror(getaddinfoStatus));
@@ -210,18 +209,18 @@ bool TcpConnect::ReadIntoLeftover(){
 
     size_t pollRes = poll(&p, 1, static_cast<int>(readTimeout_.count()));
     if (pollRes < 0) {
-        l->error("ReadIntoLeftover, poll < 0");
+        l->error("ReadIntoLeftover, poll < 0, peer {}", ip_);
         throw std::runtime_error(std::string("Poll error: ") + std::strerror(errno));
     }
     if (pollRes == 0) {
         // Timed out
-        l->warn("ReadIntoLeftover, poll timed out");
+        l->warn("ReadIntoLeftover, poll timed out, peer {}", ip_);
         return false;
     }
 
     if (!(p.revents & POLLIN)) {
         // events like POLLHUP, POLLERR, etc. 
-        l->warn("ReadIntoLeftover, poll even is NOT pollin");
+        l->warn("ReadIntoLeftover, poll even is NOT pollin, peer {}", ip_);
         return false;
     }
 
@@ -236,12 +235,12 @@ bool TcpConnect::ReadIntoLeftover(){
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
             }
-            l->error("ReadIntoLeftover, recv < 0");
+            l->error("ReadIntoLeftover, recv < 0, peer {}", ip_);
             throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
         }
         else if (received == 0) {
             // Peer closed the connection
-            l->error("ReadIntoLeftover, recv == 0, connection closed");
+            l->error("ReadIntoLeftover, recv == 0, connection closed, peer {}", sock_);
             throw std::runtime_error("Connection closed by peer");
         }
         else {
@@ -261,6 +260,7 @@ std::string TcpConnect::ReceiveOneMessage(){
     while (leftover_.size() < 4) {
         if (!ReadIntoLeftover()) {
             // Timeout or no data arrived
+            l->error("ReceiveOneMessage, ReadIntoLeftover false, peer {}", ip_);
             throw std::runtime_error("Timeout or no data while waiting for length prefix");
         }
     }
@@ -277,6 +277,7 @@ std::string TcpConnect::ReceiveOneMessage(){
     // Now read until we have the entire message in leftover_
     while (leftover_.size() < msgSize) {
         if (!ReadIntoLeftover()) {
+            l->error("ReceiveOneMessage, ReadIntoLeftover false, full message was not received peer {}", ip_);
             throw std::runtime_error("Timeout or no data while receiving message payload");
         }
     }
@@ -293,7 +294,6 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) {
     if (sock_ < 0) {
         throw std::runtime_error("Invalid socket in receive");
     }
-
     if (bufferSize != 0) {
         // read exact number of bytes
         return TcpConnect::ReceiveFixedSize(bufferSize);
@@ -302,112 +302,6 @@ std::string TcpConnect::ReceiveData(size_t bufferSize) {
         return TcpConnect::ReceiveOneMessage();
     }
 }
-
-
-
-// std::string TcpConnect::ReceiveData(size_t bufferSize) const{
-//     if (sock_ < 0) {
-//         l->error("Invalid socket in receive");
-//         throw std::runtime_error("Invalid socket in receive");
-//     }
-
-//     if (bufferSize > ((1 << 19) - 1)) {
-//         l->error("Buffer size will be too large upper");
-//         throw std::runtime_error("Buffer size will be too large upper");
-//     }
-
-//     struct pollfd p;
-//     p.fd = sock_;
-//     p.events = POLLIN;
-
-//     int poll_status = poll(&p, 1, readTimeout_.count());
-//     l->trace("Raw tcp code pure receive, peer {} poll: {}", GetIp(), poll_status);
-
-//     if(poll_status < 0){
-//         l->error("poll status < 0");
-//         throw std::runtime_error("poll status < 0");
-//     }else if(poll_status == 0){
-//         l->error("poll time out 0");
-//         throw std::runtime_error("poll time out 0 ");
-//     }else{
-//         if(p.revents & POLLIN){
-//             if(bufferSize != 0){
-//                 l->trace("Raw tcp code pure receive, buffersize != 0 peer {}", GetIp());
-//                 char buffer[bufferSize]; 
-//                 size_t recv_status = recv(sock_, buffer, sizeof(buffer), MSG_DONTWAIT );
-//                 if (recv_status < 0) {
-//                     l->error("recv < 0 error");
-//                     throw std::runtime_error("recv < 0 error");
-//                 } else if (static_cast<size_t>(recv_status) > bufferSize) {
-//                     l->error("recv > buffersize");
-//                     throw std::runtime_error("recv > buffersize");
-//                 }
-//                 return std::string(buffer, recv_status);
-//             }else{
-//                 l->trace("Raw tcp code pure receive, buffersize 0 peer {}", GetIp());
-//                 char buffer[4];  
-//                 ssize_t recv_status = recv(sock_, buffer, sizeof(buffer), 0);
-               
-//                 if (recv_status == 0) {
-//                     l->error("recv = 0, buffersize = 4");
-//                     throw std::runtime_error("recv = 0, buffersize = 4");
-//                 } else if (recv_status < 0) {
-//                     l->error("recv < 0, buffersize = 4");
-//                     throw std::runtime_error("recv < 0, buffersize = 4");
-//                 }
-
-//                 std::string buffer_str = std::string(buffer, 4);
-//                 size_t received_size = BytesToInt(buffer_str);
-                
-//                 if(received_size > ((1 << 19) - 1)){
-//                     l->error("Buffer size will be too large");
-//                     throw std::runtime_error("Buffer size will be too large");
-//                 }
-//                 char new_buffer[received_size];
-//                 std::string data;
-//                 size_t bytesRead = 0;
-//                 size_t bytesToRead = received_size;
-
-//                 int fcntlStatus = fcntl(sock_, F_GETFL, 0);
-//                 fcntlStatus &= ~O_NONBLOCK;
-//                 fcntl(sock_, F_SETFL, fcntlStatus);
-
-//                 l->trace("Raw tcp code pure receive, bf = 0, fcntl set, before loop, peer {}", GetIp());
-//                 auto startTime = std::chrono::steady_clock::now();
-//                 do{
-//                     auto diff = std::chrono::steady_clock::now() - startTime;
-//                     if (std::chrono::duration_cast<std::chrono::milliseconds>(diff) > (readTimeout_ / 2)) {
-//                         l->error("Read timeout");
-//                         throw std::runtime_error("Read timeout");
-//                     }
-                    
-//                    ssize_t readNow = recv(sock_, new_buffer, received_size, 0);
-//                     l->trace("Raw tcp code pure receive, peer {}, in loop, cur diff in time {} ms, cur read {}",
-//                         GetIp(),
-//                         std::chrono::duration_cast<std::chrono::milliseconds>(diff).count(),
-//                         readNow);
-
-//                     if (readNow <= 0) {
-//                         l->error("recv < 0");
-//                         throw std::runtime_error("recv < 0");
-//                     }
-//                     bytesToRead -= static_cast<size_t>(readNow);
-//                     data.append(new_buffer, static_cast<size_t>(readNow));
-//                 } while (bytesToRead > 0);
-
-//                 l->trace("Raw tcp code pure receive, AFTER loop, peer {}", GetIp());
-//                 fcntlStatus |= O_NONBLOCK;
-//                 fcntl(sock_, F_SETFL, fcntlStatus);
-//                 return data;
-//             }
-//         }else{
-//             l->error("POLLIN failed");
-//             throw std::runtime_error("POLLIN failed");
-//         }
-//     }
-//     return "";
-
-// }
 
 void TcpConnect::CloseConnection(){
     if (sock_ != -1) {
