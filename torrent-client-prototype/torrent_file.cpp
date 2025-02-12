@@ -1,5 +1,4 @@
 #include "torrent_file.h"
-#include "bencode.h"
 #include "byte_tools.h"
 #include <vector>
 #include <openssl/sha.h>
@@ -63,31 +62,135 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             try{
                 TFile.infoHash = CalculateSHA1(data.substr(cur_pos, res.second));
                 cur_pos += res.second;
-                for(const auto& [key, val] : res.first->elements ){
-                    auto result = std::visit([](const auto& value) -> std::variant<std::string, size_t> {
-                        using T = std::decay_t<decltype(value)>;
-                        if constexpr (std::is_same_v<T, std::string>){
-                            return value;
-                        }else if constexpr (std::is_same_v<T, size_t>){
-                            return value;
-                        }else{
-                            throw std::runtime_error("Unexpected value in visitor");
+                auto& infoDict = *res.first;
+                // loop over info dictionary
+                for(auto& [key, val] : infoDict.elements){
+                    if (key == "name") {
+                        if (!std::holds_alternative<std::string>(val)) {
+                            TFile.l->error("Parser error, Expected string for 'name' filed");
+                            throw std::runtime_error("Parser error, Expected string for 'name' filed");
                         }
-                    }, val);
-                    if(key == "name"){
-                        TFile.name = std::get<std::string>(result);
-                    }else if(key == "length"){
-                        TFile.length = std::get<size_t>(result);
-                    }else if(key == "piece length"){
-                        TFile.pieceLength = std::get<size_t>(result);
-                    }else if(key == "pieces"){
-                        std::string str_pieces = std::get<std::string>(result);
+                        TFile.name = std::get<std::string>(val);
+                    }else if (key == "piece length") {
+                        if (!std::holds_alternative<size_t>(val)) {
+                            TFile.l->error("Parser error, Expected size_t for 'piece length' filed");
+                            throw std::runtime_error("Parser error, Expected size_t for 'piece length' filed");
+                        }
+                        TFile.pieceLength = std::get<size_t>(val);
+                    }else if (key == "pieces") {
+                        if (!std::holds_alternative<std::string>(val)) {
+                            TFile.l->error("Parser error, Expected string for 'pieces' filed");
+                            throw std::runtime_error("Parser error, Expected string for 'pieces' filed");
+                        }
+                        std::string pieceStr = std::get<std::string>(val);
+                        // TFile.l->trace("!!!!! pieceStr\n{}", pieceStr);
                         size_t cur_pos = 0;
-                        while(cur_pos < str_pieces.size()){
-                            TFile.pieceHashes.push_back(str_pieces.substr(cur_pos, std::min(size_t(20), str_pieces.size() - cur_pos)));
+                        while(cur_pos < pieceStr.size()){
+                            TFile.pieceHashes.push_back(
+                                pieceStr.substr(cur_pos, std::min(size_t(20), pieceStr.size() - cur_pos))
+                            );
                             cur_pos += 20;
                         }
+                    }else if (key == "private") {
+                        if (!std::holds_alternative<size_t>(val)) {
+                            TFile.l->error("Parser error, Expected string for 'private' filed");
+                            throw std::runtime_error("Parser error, Expected string for 'private' filed");
+                        }
+                        size_t p = std::get<size_t>(val);
+                        TFile.isPrivate = (p == 1);
                     }
+                    // single-file length
+                    else if (key == "length") {
+                        TFile.multipleFiles = false;
+                        if (!std::holds_alternative<size_t>(val)) {
+                            TFile.l->error("Parser error, Expected size_t for 'length' filed");
+                            throw std::runtime_error("Parser error, Expected size_t for 'length' filed");
+                        }
+                        if(TFile.filesList.empty()){
+                            TFile.filesList.emplace_back(std::get<size_t>(val), "", "");
+                        }else{
+                            TFile.filesList.back().length = std::get<size_t>(val);
+                        }
+                    }
+                    // single file md5sum
+                    else if (key == "md5sum") {
+                        if (!std::holds_alternative<std::string>(val)) {
+                            TFile.l->error("Parser error, Expected string for 'md5sum' filed");
+                            throw std::runtime_error("Parser error, Expected string for 'md5sum' filed");
+                        }
+                        if(TFile.filesList.empty()){
+                            TFile.filesList.emplace_back(0, "", std::get<std::string>(val));
+                        }else{
+                            TFile.filesList.back().md5sum = std::get<std::string>(val);
+                        }
+                    }
+                    // multi-file mode
+                    else if (key == "files") {
+                        if (!std::holds_alternative<std::unique_ptr<Bencode::bencodeList>>(val)) {
+                            TFile.l->error("Parser error, Expected bencoded list for 'files' filed");
+                            throw std::runtime_error("Parser error, Expected bencoded list for 'files' filed");
+                        }
+                        auto& fileList = *std::get<std::unique_ptr<Bencode::bencodeList>>(val);
+                        TFile.multipleFiles = true;
+                        // loop over files
+                        for (auto& fileEntry : fileList.elements) {
+                            if (!std::holds_alternative<std::unique_ptr<Bencode::bencodeDict>>(fileEntry)) {
+                                TFile.l->error("Parser error, Each file entry must be a dictionary");
+                                throw std::runtime_error("Parser error, Each file entry must be a dictionary");
+                            }
+                            auto& fileDict = *std::get<std::unique_ptr<Bencode::bencodeDict>>(fileEntry);
+                            File f;
+                            // loop over dict for a specific file
+                            for (auto& [fkey, fval] : fileDict.elements) {
+                                if (fkey == "length") {
+                                    if (!std::holds_alternative<size_t>(fval)) {
+                                        TFile.l->error("Parser error, Expected size_t for file length filed");
+                                        throw std::runtime_error("Parser error, Expected size_t for file length filed");
+                                    }
+                                    f.length = std::get<size_t>(fval);
+                                }
+                                else if (fkey == "md5sum") {
+                                    if (!std::holds_alternative<std::string>(fval)) {
+                                        TFile.l->error("Parser error, Expected string for file md5sum filed");
+                                        throw std::runtime_error("Parser error, Expected string for file md5sum filed");
+                                    }
+                                    f.md5sum = std::get<std::string>(fval);
+                                }
+                                else if (fkey == "path") {
+                                    if (!std::holds_alternative<std::unique_ptr<Bencode::bencodeList>>(fval)) {
+                                        TFile.l->error("Parser error, Expected list for file path filed");
+                                        throw std::runtime_error("Parser error, Expected list for file path filed");
+                                    }
+                                    auto& pathList = *std::get<std::unique_ptr<Bencode::bencodeList>>(fval);
+                                    // loop over directories in path
+                                    for (auto& pathElement : pathList.elements) {
+                                        if (!std::holds_alternative<std::string>(pathElement)) {
+                                            TFile.l->error("Parser error, Expected string for file path dir");
+                                            throw std::runtime_error("Parser error, Expected string for file path dir");
+                                        }
+                                        f.path.push_back(std::get<std::string>(pathElement));
+                                    }
+                                }
+                            } 
+                            // add file to list
+                            TFile.filesList.push_back(f);
+                        }
+                    }else {
+                        TFile.l->warn("Ignoring unknown key in 'info': {}", key);
+                    }
+                }
+                // single file, add name to the filesList
+                if(!TFile.multipleFiles){
+                    TFile.length = TFile.filesList.back().length;
+                    TFile.filesList.back().path.push_back(TFile.name);
+                }
+                // for a multi file sum total length
+                if(TFile.multipleFiles){
+                    size_t totalTorrentLengthBytes = 0;
+                    for (const File& f : TFile.filesList) {
+                        totalTorrentLengthBytes += f.length;
+                    }
+                    TFile.length = totalTorrentLengthBytes;
                 }
             }
             catch(std::exception& e){
@@ -102,12 +205,7 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             if(!TFile.announceList.empty()){
                 TFile.announceList.clear();
             }
-
-            // int status;
-            // char* realname;
-            // const std::type_info &ti = typeid(res.first);
-            // realname = abi::__cxa_demangle(ti.name(), NULL, NULL, &status);
-            // rewrite as not void function 
+            
             populateAnnounceList(*res.first, TFile);
 
             TFile.l->info("announce list called, total links: {}", TFile.announceList.size());
@@ -129,11 +227,6 @@ TorrentFile LoadTorrentFile(const std::string& filename){
             auto res = Bencode::ParseString(data.substr(cur_pos));
             TFile.createdBy = res.first;
             cur_pos += res.second;
-        }else if(global_key.first == "private"){
-            TFile.l->info("private by was called");
-            auto res = Bencode::ParseInt(data.substr(cur_pos));
-            cur_pos += res.second;
-            int private_value = res.first;//maybe i'll need it 
         }else if(global_key.first == "url-list"){
             TFile.l->info("url-list was called");
             auto res = Bencode::ParseListRec(data.substr(cur_pos));

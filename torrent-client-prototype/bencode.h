@@ -8,8 +8,8 @@
 #include <map>
 #include <sstream>
 #include <memory>
+#include "spdlog/spdlog.h"
 
-typedef std::variant<std::string, size_t> string_or_int;
 namespace Bencode {
     /*
     * В это пространство имен рекомендуется вынести функции для работы с данными в формате bencode.

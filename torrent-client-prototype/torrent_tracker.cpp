@@ -63,7 +63,7 @@ void TorrentTracker::UpdatePeers(const TorrentFile& tf, std::string peerId, int 
     session.SetParameters(params);
     cpr::Response res = session.Get();
     if(res.status_code != 200){
-        l->error("Update peers, hash {} \n {}", tf.infoHash,res.text);
+        l->error("Update peers, hash {} \n\n {}", tf.infoHash, res.text);
         throw std::runtime_error("status code " + std::to_string(res.status_code));
     }
     l->trace("Update peers, get respsonse, status code  {}\n {}",res.status_code, res.text);

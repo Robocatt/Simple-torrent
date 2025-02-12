@@ -45,7 +45,17 @@ public:
      * - https://man7.org/linux/man-pages/man2/poll.2.html
      * - https://man7.org/linux/man-pages/man2/recv.2.html
      */
-    std::string ReceiveData(size_t bufferSize = 0) const;
+    std::string ReceiveData(size_t bufferSize);
+
+    // read exactly bytesWanted from socket 
+    std::string ReceiveFixedSize(size_t bytesWanted);
+    
+    // read avaliable data from socket
+    bool ReadIntoLeftover();
+
+    // read exactly one message, 
+    std::string ReceiveOneMessage();
+
 
     /*
      * Закрыть сокет
@@ -60,6 +70,7 @@ public:
     const std::string& GetIp() const;
     int GetPort() const;
 private:
+    std::string leftover_;
     const std::string ip_;
     const int port_;
     std::chrono::milliseconds connectTimeout_, readTimeout_;
