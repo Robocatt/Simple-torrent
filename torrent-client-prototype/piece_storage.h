@@ -16,7 +16,7 @@
  */
 class PieceStorage {
 public:
-    PieceStorage(const TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent);
+    PieceStorage(const TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices);
 
     /*
      * Отдает указатель на следующую часть файла, которую надо скачать
@@ -58,21 +58,31 @@ public:
      * Сколько частей файла в данный момент скачивается
      */
     size_t PiecesInProgressCount() const;
+    
 
 private:
-    std::queue<PiecePtr> remainPieces_;
-    const std::filesystem::path path;
-    std::mutex mtx;
-    std::vector<size_t> saved_pieces;
-    std::ofstream file;
-    size_t pieces_in_progress;
-    size_t piecesToDownload;
+    struct FileMapping {
+        std::filesystem::path filePath;
+        size_t fileOffsetBegin = 0;  
+        size_t fileOffsetEnd   = 0;  
+        std::ofstream stream;
+    };
+    mutable std::mutex mtx; // correct approach?
     const TorrentFile& tf_;
     std::shared_ptr<spdlog::logger> l;
+    std::queue<PiecePtr> remainPieces_;
+    size_t pieces_in_progress;
+    size_t piecesToDownload;
+    std::vector<size_t> saved_pieces;
+    std::vector<FileMapping> fileMappings_;
     /*
      * Сохраняет данную скачанную часть файла на диск.
      * Сохранение всех частей происходит в один выходной файл. Позиция записываемых данных зависит от индекса части
      * и размера частей. Данные, содержащиеся в части файла, должны быть записаны сразу в правильную позицию.
      */
     void SavePieceToDisk(const PiecePtr& piece);
+
+    void initSingleFile(const std::filesystem::path& outputDirectory, size_t percent);
+
+    void initMultiFiles(const std::filesystem::path& outputDirectory, const std::vector<size_t>& selectedIndices);
 };

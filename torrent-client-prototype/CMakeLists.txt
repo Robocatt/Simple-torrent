@@ -50,6 +50,8 @@ add_executable(
         piece_storage.h
         piece.cpp
         piece.h
+        userIO.h
+        userIO.cpp
 )
 target_link_libraries(${PROJECT_NAME} PUBLIC ${OPENSSL_LIBRARIES} cpr::cpr spdlog::spdlog)
 

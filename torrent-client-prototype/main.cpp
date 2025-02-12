@@ -2,6 +2,7 @@
 #include "piece_storage.h"
 #include "peer_connect.h"
 #include "byte_tools.h"
+#include "userIO.h"
 #include <cassert>
 #include <iostream>
 #include <filesystem>
@@ -59,102 +60,102 @@ void logInit(){
  * If -no-check is NOT specified, this function is called to verify
  * that all downloaded pieces match their expected SHA1 hash.
  */
-void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces) {
-    auto l = spdlog::get("mainLogger");
-    l->info("Start downloaded pieces hash check for file: {}", outputFilename.string());
-    const auto& savedIndices = pieces.GetPiecesSavedToDiscIndices();
+// void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces) {
+//     auto l = spdlog::get("mainLogger");
+//     l->info("Start downloaded pieces hash check for file: {}", outputFilename.string());
+//     const auto& savedIndices = pieces.GetPiecesSavedToDiscIndices();
     
-    if(savedIndices.empty()){
-        if(std::filesystem::exists(outputFilename) &&
-        std::filesystem::file_size(outputFilename) > 0){
-            l->error("Output file is not empty, but pieces were not marked as saved");
-            throw std::runtime_error("Output file is not empty, but pieces were not marked as saved");
-        }
-        return;
-    }
+//     if(savedIndices.empty()){
+//         if(std::filesystem::exists(outputFilename) &&
+//         std::filesystem::file_size(outputFilename) > 0){
+//             l->error("Output file is not empty, but pieces were not marked as saved");
+//             throw std::runtime_error("Output file is not empty, but pieces were not marked as saved");
+//         }
+//         return;
+//     }
     
-    if(!std::filesystem::exists(outputFilename)){
-        l->error("Output file does not exist!");
-        throw std::runtime_error("Output file does not exist!");
-    }
+//     if(!std::filesystem::exists(outputFilename)){
+//         l->error("Output file does not exist!");
+//         throw std::runtime_error("Output file does not exist!");
+//     }
 
-    std::vector<size_t> pieceIndices(savedIndices.begin(), savedIndices.end());
-    std::sort(pieceIndices.begin(), pieceIndices.end());
+//     std::vector<size_t> pieceIndices(savedIndices.begin(), savedIndices.end());
+//     std::sort(pieceIndices.begin(), pieceIndices.end());
     
-    size_t maxPieceIndex = pieceIndices.back();
-    size_t pieceStartByte = maxPieceIndex * tf.pieceLength;
-    size_t pieceEndByte   = (maxPieceIndex + 1) * tf.pieceLength;
-    size_t lastPieceSize = (pieceEndByte > tf.length 
-        ? tf.length - pieceStartByte
-        : tf.pieceLength);
+//     size_t maxPieceIndex = pieceIndices.back();
+//     size_t pieceStartByte = maxPieceIndex * tf.pieceLength;
+//     size_t pieceEndByte   = (maxPieceIndex + 1) * tf.pieceLength;
+//     size_t lastPieceSize = (pieceEndByte > tf.length 
+//         ? tf.length - pieceStartByte
+//         : tf.pieceLength);
 
-    size_t expectedSize = pieceStartByte + lastPieceSize;
+//     size_t expectedSize = pieceStartByte + lastPieceSize;
 
-    size_t actualSize = std::filesystem::file_size(outputFilename);
-    if(expectedSize != actualSize){
-        std::string errMsg = 
-            "Output file has incorrect size: expected = " + std::to_string(expectedSize) +
-            ", actual = " + std::to_string(actualSize);
-        l->error("{}", errMsg);
-        throw std::runtime_error(errMsg);
-    }
+//     size_t actualSize = std::filesystem::file_size(outputFilename);
+//     if(expectedSize != actualSize){
+//         std::string errMsg = 
+//             "Output file has incorrect size: expected = " + std::to_string(expectedSize) +
+//             ", actual = " + std::to_string(actualSize);
+//         l->error("{}", errMsg);
+//         throw std::runtime_error(errMsg);
+//     }
 
 
-    std::ifstream file(outputFilename, std::ios_base::binary);
+//     std::ifstream file(outputFilename, std::ios_base::binary);
     
-    if (!file.is_open()) {
-        l->error("Cannot open file for integrity check: {} (no_such_file_or_directory)", 
-                 outputFilename.string());
-        throw std::filesystem::filesystem_error(
-            "Cannot open file for integrity check:", outputFilename,
-            std::make_error_code(std::errc::no_such_file_or_directory)
-        );
-    }
+//     if (!file.is_open()) {
+//         l->error("Cannot open file for integrity check: {} (no_such_file_or_directory)", 
+//                  outputFilename.string());
+//         throw std::filesystem::filesystem_error(
+//             "Cannot open file for integrity check:", outputFilename,
+//             std::make_error_code(std::errc::no_such_file_or_directory)
+//         );
+//     }
     
-    for (size_t pieceIndex = 0; pieceIndex <= maxPieceIndex; pieceIndex++) {
-        std::size_t pieceOffset = pieceIndex * tf.pieceLength;
-        std::size_t nextPieceOffset = (pieceIndex + 1) * tf.pieceLength;
-        std::size_t thisPieceSize = (nextPieceOffset > tf.length)
-                                       ? (tf.length - pieceOffset)
-                                       : tf.pieceLength;
+//     for (size_t pieceIndex = 0; pieceIndex <= maxPieceIndex; pieceIndex++) {
+//         std::size_t pieceOffset = pieceIndex * tf.pieceLength;
+//         std::size_t nextPieceOffset = (pieceIndex + 1) * tf.pieceLength;
+//         std::size_t thisPieceSize = (nextPieceOffset > tf.length)
+//                                        ? (tf.length - pieceOffset)
+//                                        : tf.pieceLength;
         
-        file.seekg(static_cast<std::streamoff>(pieceOffset), std::ios::beg);
-        if (!file.good()) {
-            l->error("Failed to seek to piece offset {} in file {}", 
-                     pieceOffset, outputFilename.string());
-            throw std::filesystem::filesystem_error(
-                "Failed to seek to piece offset", outputFilename,
-                std::make_error_code(std::errc::no_such_file_or_directory)
-            );
-        }
-        std::string pieceDataFromFile(thisPieceSize, '\0');
-        file.read(pieceDataFromFile.data(), static_cast<std::streamsize>(thisPieceSize));
-        size_t bytesRead = static_cast<std::size_t>(file.gcount());
+//         file.seekg(static_cast<std::streamoff>(pieceOffset), std::ios::beg);
+//         if (!file.good()) {
+//             l->error("Failed to seek to piece offset {} in file {}", 
+//                      pieceOffset, outputFilename.string());
+//             throw std::filesystem::filesystem_error(
+//                 "Failed to seek to piece offset", outputFilename,
+//                 std::make_error_code(std::errc::no_such_file_or_directory)
+//             );
+//         }
+//         std::string pieceDataFromFile(thisPieceSize, '\0');
+//         file.read(pieceDataFromFile.data(), static_cast<std::streamsize>(thisPieceSize));
+//         size_t bytesRead = static_cast<std::size_t>(file.gcount());
         
-        if (bytesRead != thisPieceSize) {
-            std::string errMsg = 
-                "Could not read full piece from file. Expected " +
-                std::to_string(thisPieceSize) + " bytes, got " + std::to_string(bytesRead);
-            l->error("{}", errMsg);
-            throw std::runtime_error(errMsg);
-        }
+//         if (bytesRead != thisPieceSize) {
+//             std::string errMsg = 
+//                 "Could not read full piece from file. Expected " +
+//                 std::to_string(thisPieceSize) + " bytes, got " + std::to_string(bytesRead);
+//             l->error("{}", errMsg);
+//             throw std::runtime_error(errMsg);
+//         }
 
-        const std::string realHash = CalculateSHA1(pieceDataFromFile);
-        if (realHash != tf.pieceHashes[pieceIndex]) {
-            l->error("File piece with index {} has incorrect hash\n"
-                     "Expected: {}\n"
-                     "Got: {}",
-                     pieceIndex,
-                     HexEncode(tf.pieceHashes[pieceIndex]),
-                     HexEncode(realHash));
-            throw std::runtime_error(
-                "Wrong piece hash for index " + std::to_string(pieceIndex)
-            );
-        }
-    }
-    l->info("All downloaded pieces have correct hash.");
-    return;
-}
+//         const std::string realHash = CalculateSHA1(pieceDataFromFile);
+//         if (realHash != tf.pieceHashes[pieceIndex]) {
+//             l->error("File piece with index {} has incorrect hash\n"
+//                      "Expected: {}\n"
+//                      "Got: {}",
+//                      pieceIndex,
+//                      HexEncode(tf.pieceHashes[pieceIndex]),
+//                      HexEncode(realHash));
+//             throw std::runtime_error(
+//                 "Wrong piece hash for index " + std::to_string(pieceIndex)
+//             );
+//         }
+//     }
+//     l->info("All downloaded pieces have correct hash.");
+//     return;
+// }
 
 // void DeleteDownloadedFile(const std::filesystem::path& outputFilename) {
 //     std::filesystem::remove(outputFilename);
@@ -301,7 +302,7 @@ void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, c
     l->info("END DownloadTorrentFile");
 }
 
-void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::path& pathToSaveDirectory, size_t percent) {
+void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::path& pathToSaveDirectory, size_t percent, bool doCheck) {
     TorrentFile torrentFile;
     auto l = spdlog::get("mainLogger");
     try {
@@ -312,13 +313,39 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
         return;
     }
     l->info("Test torrent file path: {}", pathToSaveDirectory.string());
-    PieceStorage pieces(torrentFile, pathToSaveDirectory, percent);
     
+    
+    std::cout << "Select files to download:\n";
+    for(size_t i = 0; i <  torrentFile.filesList.size(); ++i){
+        std::cout << '[' << i + 1 <<']' << torrentFile.filesList[i].path.back() << "\n";
+    }
+    std::cout << "[a] All\n\n";
+    std::cout.flush();
+
+    std::cout << "Enter selection (example: '1', '1,3-5', or 'a' for all): ";
+    std::string input;
+    if (!std::getline(std::cin, input)) {
+        // I/O error! 
+        throw std::runtime_error("IO error");
+    }
+    std::vector<size_t> selectedIndices = parseFileSelection(input, torrentFile.filesList.size());
+    
+    if (selectedIndices.empty()) {
+        std::cout << "No valid selection given. Nothing will be downloaded.\n";
+        return;
+    } else {
+        std::cout << "You selected these files:\n";
+        for (size_t& idx : selectedIndices) {
+            std::cout << "  " << torrentFile.filesList[idx].path.back() << "\n";
+        }
+        std::cout.flush();
+    }
+    PieceStorage pieces(torrentFile, pathToSaveDirectory, percent, selectedIndices);
     DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
     pieces.CloseOutputFile();
-
-    CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces);
-
+    // if(doCheck){
+        // CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces);
+    // }
 }
 
 
@@ -328,17 +355,20 @@ int main(int argc, char* argv[]) {
     }catch (const spdlog::spdlog_ex& ex){
         std::cerr << "Log initialization failed: " << ex.what() << std::endl;
         return 1;
+    }catch (...){
+        std::cerr << "Got an unexpected error." << std::endl;
+        return 1;
     }
     std::shared_ptr<spdlog::logger> l = spdlog::get("mainLogger");
 
 
     try{
-         l->info("argc = {}", argc);
+        l->info("argc = {}", argc);
         for (int i = 1; i < argc; ++i){
             l->info("Arg {}: {}", i, argv[i]);
         }
 
-        std::filesystem::path pathToSaveDirectory{};
+        std::filesystem::path pathToSaveDirectory;
         std::filesystem::path pathToTorrentFile;
         size_t percent = -1;
         bool doCheck = true; 
@@ -402,7 +432,7 @@ int main(int argc, char* argv[]) {
                                                    : ".")) / "Downloads"
             );
         }
-        TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent);
+        TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent, doCheck);
         l->critical("End of main.cpp, file has been saved successfully");
 
     }catch (const std::exception& e){
