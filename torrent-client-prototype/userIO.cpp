@@ -21,6 +21,7 @@ std::vector<std::string> splitInput(const std::string& input) {
 }
 
 std::vector<size_t> parseFileSelection(const std::string& input, size_t fileCount) {
+    auto l = spdlog::get("mainLogger");
     std::vector<size_t> selected;
 
     std::string trimmed = input;
@@ -68,7 +69,7 @@ std::vector<size_t> parseFileSelection(const std::string& input, size_t fileCoun
             } 
             catch (const std::exception& e) {
                 // We handle parse errors or out_of_range errors
-                std::cerr << "Skipping invalid range '" << tk << "' (" << e.what() << ")\n";
+                l->warn("Skipping invalid range {}", tk);
             }
         } 
         else {
@@ -82,7 +83,7 @@ std::vector<size_t> parseFileSelection(const std::string& input, size_t fileCoun
                 selected.push_back(static_cast<size_t>(val));
             }
             catch (const std::exception& e) {
-                std::cerr << "Skipping invalid token '" << tk << "' (" << e.what() << ")\n";
+                l->warn("Skipping invalid token {}", tk);
             }
         }
     }

@@ -4,11 +4,6 @@
 #include <sstream>
 #include <utility>
 
-//debug
-#include <fstream>
-#include <cstddef>
-#include <algorithm>
-#include <cstring>
 
 
 using namespace std::chrono_literals;
@@ -206,7 +201,7 @@ void PeerConnect::MainLoop() {
             }
             case MessageId::BitField: {
                 std::string bitfield = ms.payload;
-                size_t expectedSize = (size_t)std::ceil(pieceStorage_.TotalPiecesCount() / 8.0);
+                size_t expectedSize = (size_t)std::ceil(tf_.pieceHashes.size() / 8.0);
                 if(expectedSize != ms.messageLength - 1) {
                     l->warn("Bitfieldis of incorrect size, expected {}, got {}, terminating connection, peer {}",expectedSize, ms.messageLength, socket_.GetIp());
                     Terminate();

@@ -1,8 +1,6 @@
 #include "message.h"
 #include "byte_tools.h"
 #include <sstream>
-//debug
-#include <iostream>
 
 
 Message Message::Parse(const std::string& messageString){
@@ -78,8 +76,6 @@ std::string Message::ToString() const{
         l->trace("Message ToString keepalive");
         return result;
     }
-    
-    
     
     if(id == MessageId::Choke){
         result += IntToBytes(1);

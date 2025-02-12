@@ -1,5 +1,5 @@
 #include "piece_storage.h"
-#include <cmath>   
+
 
 PieceStorage::PieceStorage(const TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices)
     : tf_(tf) {
@@ -11,10 +11,6 @@ PieceStorage::PieceStorage(const TorrentFile& tf, const std::filesystem::path& o
     }else{
         initMultiFiles(outputDirectory, selectedIndices);
     }
-
-    // file.open(path_file);
-    // file.seekp(tf.length - 1);
-    // file.write("", 1);
 }
 
 void PieceStorage::initSingleFile(const std::filesystem::path& outputDirectory, size_t percent){

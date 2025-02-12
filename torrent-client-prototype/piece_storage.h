@@ -4,9 +4,8 @@
 #include "piece.h"
 #include <queue>
 #include <string>
-#include <unordered_set>
 #include <mutex>
-#include <fstream>
+#include <cmath>   
 #include <filesystem>
 #include "spdlog/spdlog.h"
 
@@ -67,7 +66,7 @@ private:
         size_t fileOffsetEnd   = 0;  
         std::ofstream stream;
     };
-    mutable std::mutex mtx; // correct approach?
+    mutable std::mutex mtx; 
     const TorrentFile& tf_;
     std::shared_ptr<spdlog::logger> l;
     std::queue<PiecePtr> remainPieces_;

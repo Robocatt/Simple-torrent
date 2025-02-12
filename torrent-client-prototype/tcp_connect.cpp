@@ -5,7 +5,6 @@
 #include <arpa/inet.h>
 #include <stdexcept>
 #include <cstring>
-#include <iostream>
 #include <chrono>
 #include <netinet/in.h>
 #include <unistd.h>
