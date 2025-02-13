@@ -15,7 +15,7 @@
  */
 class PieceStorage {
 public:
-    PieceStorage(TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices);
+    PieceStorage(TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices, bool doCheck);
 
     /*
      * Отдает указатель на следующую часть файла, которую надо скачать
@@ -67,6 +67,8 @@ private:
     size_t pieces_in_progress;
     size_t piecesToDownload;
     std::vector<size_t> savedPieces;
+    bool doCheck;
+    // if doCheck download previous whole piece even if the file is not selected
     /*
      * Сохраняет данную скачанную часть файла на диск.
      * Сохранение всех частей происходит в один выходной файл. Позиция записываемых данных зависит от индекса части

@@ -1,8 +1,8 @@
 #include "piece_storage.h"
 
 
-PieceStorage::PieceStorage(TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices)
-    : tf_(tf) {
+PieceStorage::PieceStorage(TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices, bool doCheck)
+    : tf_(tf), doCheck(doCheck) {
     l = spdlog::get("mainLogger");
     l->trace("constructor Piece storage init");
 
@@ -44,7 +44,7 @@ void PieceStorage::initSingleFile(const std::filesystem::path& outputDirectory, 
 
     std::filesystem::path filePath = outputDirectory / tf_.name;
     std::filesystem::create_directories(filePath.parent_path());
-
+    f.fullPath = filePath;
     f.outStream.open(filePath, std::ios::binary | std::ios::out);
     if (!f.outStream.is_open()) {
         l->error("Failed to open a stream for a file {}", filePath.string());
@@ -66,25 +66,23 @@ void PieceStorage::initMultiFiles(const std::filesystem::path& outputDirectory, 
         return;
     }
 
-
     for (size_t i = 0; i < tf_.filesList.size(); ++i) {
         File& f = tf_.filesList[i];
-
-        f.isSelected = (std::find(selectedIndices.begin(), selectedIndices.end(), i) != selectedIndices.end());
-        if (!f.isSelected)
-            continue;
-
         std::filesystem::path filePath = outputDirectory / tf_.name;
         for (auto& p : f.path) {
             filePath /= p;
         }
-        std::filesystem::create_directories(filePath.parent_path());
+        f.fullPath = filePath;
 
-        f.outStream.open(filePath, std::ios::binary | std::ios::out);
-
+        f.isSelected = (std::find(selectedIndices.begin(), selectedIndices.end(), i) != selectedIndices.end());
+        if (!f.isSelected)
+            continue;
+        std::filesystem::create_directories(f.fullPath.parent_path());
+        f.outStream.open(f.fullPath , std::ios::binary | std::ios::out);
+        
         if (!f.outStream.is_open()) {
-            l->error("Failed to open output file for {}", filePath.string());
-            throw std::runtime_error("Failed to open multi-file output: " + filePath.string());
+            l->error("Failed to open output file for {}", f.fullPath.string());
+            throw std::runtime_error("Failed to open multi-file output: " + f.fullPath.string());
         }
     }
 
@@ -192,19 +190,20 @@ void PieceStorage::SavePieceToDisk(const PiecePtr& piece) {
 
     // For each mapped file, see if overlap
     for (auto &f : tf_.filesList) {
-        if (!f.isSelected) {
-            continue; 
-        }
         // If no overlap, skip
         if (pieceGlobalEnd < f.startOffset || pieceGlobalBegin > f.endOffset) {
             continue;
+        }
+        if (!f.isSelected && doCheck) {
+            l->trace("Save piece, file is NOT selected, open stream");
+            f.outStream.open(f.fullPath, std::ios::binary | std::ios::out);
         }
 
         // Overlap range
         size_t overlapBegin = std::max(pieceGlobalBegin, f.startOffset);
         size_t overlapEnd = std::min(pieceGlobalEnd, f.endOffset);
         size_t overlapSize = overlapEnd - overlapBegin + 1;
-
+        l->trace("Save piece, index {}, overlapBegin {}, overlapEnd {}", index, overlapBegin, overlapEnd);
         // Where to read from inside the piece's data
         size_t readOffsetInPiece = overlapBegin - pieceGlobalBegin;
 

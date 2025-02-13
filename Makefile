@@ -23,7 +23,7 @@ run_test: compile
 	/bin/bash check_script.sh ./cmake-build/torrent-client-prototype > output.txt 2>&1
 
 run: compile
-	./cmake-build/torrent-client-prototype -d ~/torrent -p 100 resources/OHenryAll.torrent 
+	./cmake-build/torrent-client-prototype -d ~/torrent -p 10 resources/OHenryAll.torrent 
 
 py:
 	/bin/bash check_script.sh

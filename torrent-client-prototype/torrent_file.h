@@ -3,6 +3,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <filesystem>
 #include "bencode.h"
 #include "spdlog/spdlog.h"
 
@@ -10,6 +11,7 @@ struct File{
     size_t length;
     std::vector<std::string> path;
     std::string md5sum;
+    std::filesystem::path fullPath;
     size_t startOffset = 0;
     size_t endOffset = 0;
     bool isSelected = false;
