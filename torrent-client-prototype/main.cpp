@@ -60,7 +60,7 @@ void logInit(){
  * If -no-check is NOT specified, this function is called to verify
  * that all downloaded pieces match their expected SHA1 hash.
  */
-// void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces) {
+// void CheckDownloadedPiecesIntegrity(const std::filesystem::path& outputFilename, const TorrentFile& tf, PieceStorage& pieces, std::vector<size_t>& selectedIndices) {
 //     auto l = spdlog::get("mainLogger");
 //     l->info("Start downloaded pieces hash check for file: {}", outputFilename.string());
 //     const auto& savedIndices = pieces.GetPiecesSavedToDiscIndices();
@@ -74,6 +74,7 @@ void logInit(){
 //         return;
 //     }
     
+//     // check name for a single file, dir name for a multi-file
 //     if(!std::filesystem::exists(outputFilename)){
 //         l->error("Output file does not exist!");
 //         throw std::runtime_error("Output file does not exist!");
@@ -82,14 +83,19 @@ void logInit(){
 //     std::vector<size_t> pieceIndices(savedIndices.begin(), savedIndices.end());
 //     std::sort(pieceIndices.begin(), pieceIndices.end());
     
-//     size_t maxPieceIndex = pieceIndices.back();
-//     size_t pieceStartByte = maxPieceIndex * tf.pieceLength;
-//     size_t pieceEndByte   = (maxPieceIndex + 1) * tf.pieceLength;
-//     size_t lastPieceSize = (pieceEndByte > tf.length 
-//         ? tf.length - pieceStartByte
-//         : tf.pieceLength);
+//     // for (int selectedFileIdx : selectedIndices){
+//     //     const auto& selectedFile = tf.filesList[selectedFileIdx];
+//     //     selectedFile.
 
-//     size_t expectedSize = pieceStartByte + lastPieceSize;
+//     // }
+//     size_t maxPieceIndex = pieceIndices.back();
+//     size_t lastPieceStartByte = maxPieceIndex * tf.pieceLength;
+//     size_t lastPieceEndByte   = (maxPieceIndex + 1) * tf.pieceLength;
+//     size_t lastPieceSize = (lastPieceEndByte > tf.length 
+//         ? tf.length - lastPieceStartByte
+//         : tf.pieceLength);
+//     l->critical("maxPieceIndex = {}, lastPieceStartByte = {}, lastPieceEndByte = {}, lastPieceSize = {}", maxPieceIndex, lastPieceStartByte, lastPieceEndByte, lastPieceSize);
+//     size_t expectedSize = lastPieceStartByte + lastPieceSize;
 
 //     size_t actualSize = std::filesystem::file_size(outputFilename);
 //     if(expectedSize != actualSize){
@@ -343,9 +349,9 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
     PieceStorage pieces(torrentFile, pathToSaveDirectory, percent, selectedIndices);
     DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
     pieces.CloseOutputFile();
-    // if(doCheck){
-        // CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces);
-    // }
+    if(doCheck){
+        CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces, selectedIndices);
+    }
 }
 
 // add log level argument 

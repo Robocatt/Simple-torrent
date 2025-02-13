@@ -83,7 +83,6 @@ TorrentFile LoadTorrentFile(const std::string& filename){
                             throw std::runtime_error("Parser error, Expected string for 'pieces' filed");
                         }
                         std::string pieceStr = std::get<std::string>(val);
-                        // TFile.l->trace("!!!!! pieceStr\n{}", pieceStr);
                         size_t cur_pos = 0;
                         while(cur_pos < pieceStr.size()){
                             TFile.pieceHashes.push_back(
@@ -139,7 +138,7 @@ TorrentFile LoadTorrentFile(const std::string& filename){
                                 throw std::runtime_error("Parser error, Each file entry must be a dictionary");
                             }
                             auto& fileDict = *std::get<std::unique_ptr<Bencode::bencodeDict>>(fileEntry);
-                            File f;
+                            File f = File();
                             // loop over dict for a specific file
                             for (auto& [fkey, fval] : fileDict.elements) {
                                 if (fkey == "length") {
@@ -173,24 +172,38 @@ TorrentFile LoadTorrentFile(const std::string& filename){
                                 }
                             } 
                             // add file to list
-                            TFile.filesList.push_back(f);
+                            TFile.filesList.push_back(std::move(f));
                         }
                     }else {
                         TFile.l->warn("Ignoring unknown key in 'info': {}", key);
                     }
-                }
+                } // end info dict
+
+
+
                 // single file, add name to the filesList
                 if(!TFile.multipleFiles){
-                    TFile.length = TFile.filesList.back().length;
-                    TFile.filesList.back().path.push_back(TFile.name);
-                }
-                // for a multi file sum total length
-                if(TFile.multipleFiles){
-                    size_t totalTorrentLengthBytes = 0;
-                    for (const File& f : TFile.filesList) {
-                        totalTorrentLengthBytes += f.length;
+                    if(!TFile.filesList.empty()){
+                        TFile.length = TFile.filesList[0].length;
+                        TFile.filesList[0].path.push_back(TFile.name);
+                        TFile.filesList[0].startOffset = 0;
+                        TFile.filesList[0].endOffset = TFile.filesList[0].length > 0
+                                         ? (TFile.filesList[0].length - 1) : 0;
+                    }else{
+                        TFile.l->error("Expected single file but files list empty");
+                        throw std::runtime_error("Expected single file but files list empty");
                     }
-                    TFile.length = totalTorrentLengthBytes;
+                }else{// for a multi file sum total length
+                    size_t globalOffset = 0;
+                    for (auto &f : TFile.filesList) {
+                        f.startOffset = globalOffset;
+                        f.endOffset   = (f.length > 0)
+                                        ? (globalOffset + f.length - 1)
+                                        : globalOffset;
+                        globalOffset  += f.length;
+                    }
+                    // total length of all files
+                    TFile.length = globalOffset;    
                 }
             }
             catch(std::exception& e){

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <sstream>
 #include <vector>
 #include "bencode.h"
 #include "spdlog/spdlog.h"
@@ -9,6 +10,10 @@ struct File{
     size_t length;
     std::vector<std::string> path;
     std::string md5sum;
+    size_t startOffset = 0;
+    size_t endOffset = 0;
+    bool isSelected = false;
+    std::ofstream outStream;
     File () {}
     File(size_t length_, const std::string path_, const std::string md5sum_) :
         length(length_), md5sum(md5sum_){

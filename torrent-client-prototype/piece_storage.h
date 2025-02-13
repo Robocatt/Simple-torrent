@@ -15,7 +15,7 @@
  */
 class PieceStorage {
 public:
-    PieceStorage(const TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices);
+    PieceStorage(TorrentFile& tf, const std::filesystem::path& outputDirectory, size_t percent, const std::vector<size_t>& selectedIndices);
 
     /*
      * Отдает указатель на следующую часть файла, которую надо скачать
@@ -60,20 +60,13 @@ public:
     
 
 private:
-    struct FileMapping {
-        std::filesystem::path filePath;
-        size_t fileOffsetBegin = 0;  
-        size_t fileOffsetEnd   = 0;  
-        std::ofstream stream;
-    };
     mutable std::mutex mtx; 
-    const TorrentFile& tf_;
+    TorrentFile& tf_;
     std::shared_ptr<spdlog::logger> l;
     std::queue<PiecePtr> remainPieces_;
     size_t pieces_in_progress;
     size_t piecesToDownload;
-    std::vector<size_t> saved_pieces;
-    std::vector<FileMapping> fileMappings_;
+    std::vector<size_t> savedPieces;
     /*
      * Сохраняет данную скачанную часть файла на диск.
      * Сохранение всех частей происходит в один выходной файл. Позиция записываемых данных зависит от индекса части
