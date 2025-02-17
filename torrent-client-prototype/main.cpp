@@ -31,11 +31,26 @@ std::string RandomString(size_t length) {
 
 const std::string PeerId = "TESTAPPDONTWORRY" + RandomString(4);
 
+spdlog::level::level_enum parseLogLevel(const std::string& levelStr) {
+    std::string levelLower;
+    levelLower.reserve(levelStr.size());
+    for(char c : levelStr){
+        levelLower.push_back(std::tolower(static_cast<unsigned char>(c)));
+    }
 
-void logInit(){
+    if (levelLower == "trace")    return spdlog::level::trace;
+    if (levelLower == "debug")    return spdlog::level::debug;
+    if (levelLower == "info")     return spdlog::level::info;
+    if (levelLower == "warn")     return spdlog::level::warn;
+    if (levelLower == "critical") return spdlog::level::critical;
+
+    return spdlog::level::warn;
+}
+
+void logInit(spdlog::level::level_enum consoleLevel){
     // main log for the user with WARNS and above 
     auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    consoleSink->set_level(spdlog::level::warn);
+    consoleSink->set_level(consoleLevel);
     
     // debug log for all messages 
     auto debugLogFileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Logs/debug.log");
@@ -250,32 +265,51 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
     }
 }
 
-// add log level argument 
+
 int main(int argc, char* argv[]) {
-    try{
-        logInit();
-    }catch (const spdlog::spdlog_ex& ex){
+
+    spdlog::level::level_enum consoleLogLevel = spdlog::level::warn;
+    int i = 1;
+    // try to parse log-level first, if present. 
+    std::string arg = argv[i];
+    if (arg == "-log-level") {
+        if (i + 1 < argc) {
+            consoleLogLevel = parseLogLevel(argv[++i]);
+            i++;
+        } else {
+            std::cerr << "Missing log level after -log-level.\n";
+            return 1;
+        }
+    }
+    
+
+    try {
+        logInit(consoleLogLevel);
+    }
+    catch (const spdlog::spdlog_ex& ex) {
         std::cerr << "Log initialization failed: " << ex.what() << std::endl;
         return 1;
-    }catch (...){
+    }
+    catch (...) {
         std::cerr << "Got an unexpected error." << std::endl;
         return 1;
     }
-    std::shared_ptr<spdlog::logger> l = spdlog::get("mainLogger");
 
+    auto l = spdlog::get("mainLogger");
 
     try{
         l->info("argc = {}", argc);
-        for (int i = 1; i < argc; ++i){
-            l->info("Arg {}: {}", i, argv[i]);
+        for (int j = 1; j < argc; ++j){
+            l->info("Arg {}: {}", j, argv[j]);
         }
 
         std::filesystem::path pathToSaveDirectory;
         std::filesystem::path pathToTorrentFile;
         size_t percent = -1;
         bool doCheck = true; 
-        
-        for(int i = 1; i < argc; ++i){
+
+        // i defined above, if -log-level present shifted 
+        for(; i < argc; ++i){
             std::string arg = argv[i];
             if(arg == "-d"){
                 if (i + 1 < argc) {
