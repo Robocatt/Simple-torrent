@@ -121,7 +121,7 @@ void PeerConnect::RequestPiece() {
     l->trace("In RequestPiece, peer {}", socket_.GetIp());
     if(pieceInProgress_ == nullptr){
         l->trace("In RequestPiece, peer {}, piece == null,try call GetNextPieceToDownload", socket_.GetIp());
-        pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();
+        pieceInProgress_ = pieceStorage_.GetNextPieceToDownload();// piecesInProgress++
         if(pieceInProgress_){
             l->trace("In RequestPiece, peer {}, piece was null, get piece index {}", socket_.GetIp(), pieceInProgress_->GetIndex());
         }else{
@@ -151,9 +151,16 @@ void PeerConnect::RequestPiece() {
     
     Message ms;
     ms = ms.Init(MessageId::Request, payload);
-    socket_.SendData(ms.ToString());
-    l->trace("{} peer after data send", socket_.GetIp());
-    pendingBlock_ = true;
+    try{
+        socket_.SendData(ms.ToString());
+        pendingBlock_ = true;
+        l->trace("{} peer after successful data send", socket_.GetIp());
+    }catch (const std::exception& e ){
+        l->warn("Error sending message to the peer {}, cancelling piece {}, error {}", socket_.GetIp(), pieceInProgress_->GetIndex(), e.what());
+        // hashes mismatch
+        pieceStorage_.PieceProcessed(pieceInProgress_);
+        Terminate();
+    }
     
 }
 

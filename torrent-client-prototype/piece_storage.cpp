@@ -135,7 +135,7 @@ PiecePtr PieceStorage::GetNextPieceToDownload() {
         l->info("QueueIsEmpty");
         return nullptr;
     } else {
-        pieces_in_progress++;
+        piecesInProgress++;
         PiecePtr front = remainPieces_.front();
         remainPieces_.pop();
         return front;
@@ -150,6 +150,7 @@ void PieceStorage::PieceProcessed(const PiecePtr& piece) {
         piece->Reset();
         std::lock_guard<std::mutex> lock(mtx);
         remainPieces_.push(piece);
+        piecesInProgress--;
     }
 }
 
@@ -215,11 +216,11 @@ void PieceStorage::SavePieceToDisk(const PiecePtr& piece) {
         f.outStream.flush(); 
     }
     savedPieces.push_back(index);
-    pieces_in_progress--;
+    piecesInProgress--;
 
     l->info("successfully saved piece {} to disk", piece->GetIndex());
 }
 
 size_t PieceStorage::PiecesInProgressCount() const{
-    return pieces_in_progress;
+    return piecesInProgress;
 }

@@ -64,8 +64,8 @@ private:
     TorrentFile& tf_;
     std::shared_ptr<spdlog::logger> l;
     std::queue<PiecePtr> remainPieces_;
-    size_t pieces_in_progress;
-    size_t piecesToDownload;
+    size_t piecesInProgress; // use atomic maybe?
+    size_t piecesToDownload; // Number of piece that will be downloaded
     std::vector<size_t> savedPieces;
     bool doCheck;
     // if doCheck download previous whole piece even if the file is not selected
