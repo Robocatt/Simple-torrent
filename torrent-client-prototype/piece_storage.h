@@ -57,17 +57,24 @@ public:
      * Сколько частей файла в данный момент скачивается
      */
     size_t PiecesInProgressCount() const;
-    
 
+    const size_t GetTotalBytesToDownload() const{
+        return totalBytesToDownload;
+    }
+    std::atomic<size_t> bytesDownloaded{0};
+protected:
+    size_t totalBytesToDownload = 0;
+    
 private:
     mutable std::mutex mtx; 
     TorrentFile& tf_;
     std::shared_ptr<spdlog::logger> l;
     std::queue<PiecePtr> remainPieces_;
     size_t piecesInProgress; // use atomic maybe?
-    size_t piecesToDownload; // Number of piece that will be downloaded
+    size_t piecesToDownload; // Total number of piece that will be downloaded
     std::vector<size_t> savedPieces;
     bool doCheck;
+    
     // if doCheck download previous whole piece even if the file is not selected
     /*
      * Сохраняет данную скачанную часть файла на диск.

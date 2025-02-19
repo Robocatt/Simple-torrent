@@ -36,7 +36,7 @@ void TcpConnect::EstablishConnection(){
     hints.ai_socktype = SOCK_STREAM;
     int getaddinfoStatus = getaddrinfo(ip_.c_str(), std::string(std::to_string(port_)).c_str(), &hints, &serverResult);
     if (getaddinfoStatus != 0) {
-        l->error("getaddrinfo fail: {}", gai_strerror(getaddinfoStatus));
+        l->warn("getaddrinfo fail: {}", gai_strerror(getaddinfoStatus));
         throw std::runtime_error(
             "getaddrinfo fail: " + std::string(gai_strerror(getaddinfoStatus)));
     }
@@ -53,7 +53,7 @@ void TcpConnect::EstablishConnection(){
         // Set nonblocking
         int fcntlStatus = fcntl(sock_, F_SETFL, O_NONBLOCK);
         if (fcntlStatus < 0) {
-            l->error("fcntl error setting nonblock: {}", std::strerror(errno));
+            l->warn("fcntl error setting nonblock: {}", std::strerror(errno));
             close(sock_);
             sock_ = -1;
             // try next address
@@ -78,7 +78,7 @@ void TcpConnect::EstablishConnection(){
                     l->warn("Establish connection, select < 0");
                 }else if(selectStatus > 0){
                     if (!FD_ISSET(sock_, &writefds)) {
-                        l->error("select() indicated ready, but socket not in writefds");
+                        l->warn("select() indicated ready, but socket not in writefds");
                         close(sock_);
                         sock_ = -1;
                         continue;
@@ -110,7 +110,7 @@ void TcpConnect::EstablishConnection(){
                 continue;
             }else{
                 // Error other than EINPROGRESS
-                l->error("Immediate error in connect(): {}", std::strerror(errno));
+                l->warn("Immediate error in connect(): {}", std::strerror(errno));
                 close(sock_);
                 sock_ = -1;
                 continue; 
@@ -126,13 +126,13 @@ void TcpConnect::EstablishConnection(){
     if (serverResult) {
         freeaddrinfo(serverResult);
     }
-    l->error("Failed to connect to any resolved address");
+    l->warn("Failed to connect to any resolved address");
     throw std::runtime_error("Unable to connect to the given IP/port");
 }
 
 void TcpConnect::SendData(const std::string& data) const{
     if (sock_ < 0) {
-        l->error("Invalid socket in send");
+        l->warn("Invalid socket in send");
         throw std::runtime_error("Invalid socket in send");
     }
 
@@ -208,7 +208,7 @@ bool TcpConnect::ReadIntoLeftover(){
 
     size_t pollRes = poll(&p, 1, static_cast<int>(readTimeout_.count()));
     if (pollRes < 0) {
-        l->error("ReadIntoLeftover, poll < 0, peer {}", ip_);
+        l->warn("ReadIntoLeftover, poll < 0, peer {}", ip_);
         throw std::runtime_error(std::string("Poll error: ") + std::strerror(errno));
     }
     if (pollRes == 0) {
@@ -234,12 +234,12 @@ bool TcpConnect::ReadIntoLeftover(){
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
             }
-            l->error("ReadIntoLeftover, recv < 0, peer {}", ip_);
+            l->warn("ReadIntoLeftover, recv < 0, peer {}", ip_);
             throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
         }
         else if (received == 0) {
             // Peer closed the connection
-            l->error("ReadIntoLeftover, recv == 0, connection closed, peer {}", sock_);
+            l->warn("ReadIntoLeftover, recv == 0, connection closed, peer {}", sock_);
             throw std::runtime_error("Connection closed by peer");
         }
         else {
@@ -259,7 +259,7 @@ std::string TcpConnect::ReceiveOneMessage(){
     while (leftover_.size() < 4) {
         if (!ReadIntoLeftover()) {
             // Timeout or no data arrived
-            l->error("ReceiveOneMessage, ReadIntoLeftover false, peer {}", ip_);
+            l->warn("ReceiveOneMessage, ReadIntoLeftover false, peer {}", ip_);
             throw std::runtime_error("Timeout or no data while waiting for length prefix");
         }
     }
@@ -276,7 +276,7 @@ std::string TcpConnect::ReceiveOneMessage(){
     // Now read until we have the entire message in leftover_
     while (leftover_.size() < msgSize) {
         if (!ReadIntoLeftover()) {
-            l->error("ReceiveOneMessage, ReadIntoLeftover false, full message was not received peer {}", ip_);
+            l->warn("ReceiveOneMessage, ReadIntoLeftover false, full message was not received peer {}", ip_);
             throw std::runtime_error("Timeout or no data while receiving message payload");
         }
     }

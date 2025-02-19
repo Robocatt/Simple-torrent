@@ -21,15 +21,16 @@ void PieceStorage::initSingleFile(const std::filesystem::path& outputDirectory, 
     File& f = tf_.filesList.back();
     l->info("Initializing single-file storage for '{}', partial = {}%", f.path.back(), percent);
     
-    size_t totalBytesWanted = static_cast<size_t>(std::ceil(
+    
+    totalBytesToDownload = static_cast<size_t>(std::ceil(
         static_cast<double>(f.length) * (static_cast<double>(percent) / 100.0))
     );
-    if (totalBytesWanted == 0 && percent > 0) {
-        totalBytesWanted = 1; 
+    if (totalBytesToDownload == 0 && percent > 0) {
+        totalBytesToDownload = 1; 
     }
     // round up to full piece
     piecesToDownload = std::min(tf_.pieceHashes.size(),
-        (totalBytesWanted + tf_.pieceLength - 1) / tf_.pieceLength);
+        (totalBytesToDownload + tf_.pieceLength - 1) / tf_.pieceLength);
 
     l->info("constructor Piece storage, expected number of pieces is {}", piecesToDownload);
 
@@ -115,6 +116,7 @@ void PieceStorage::initMultiFiles(const std::filesystem::path& outputDirectory, 
         }
 
         if (needed) {
+            totalBytesToDownload += pieceSize;
             auto piecePtr = std::make_shared<Piece>(i, pieceSize, tf_.pieceHashes[i]);
             remainPieces_.push(piecePtr);
             downloadedCount++;
@@ -147,7 +149,10 @@ void PieceStorage::PieceProcessed(const PiecePtr& piece) {
         SavePieceToDisk(piece);
     } else {
         l->warn("Hashes do not match, resetting piece {}");
+        size_t piecesDownloadedBytes = piece->GetDownloadedBytes();
         piece->Reset();
+        bytesDownloaded.fetch_sub(piecesDownloadedBytes, std::memory_order_relaxed);
+        
         std::lock_guard<std::mutex> lock(mtx);
         remainPieces_.push(piece);
         piecesInProgress--;

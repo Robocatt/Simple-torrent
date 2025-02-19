@@ -6,6 +6,7 @@ constexpr size_t BLOCK_SIZE = 1 << 14;
 Piece::Piece(size_t index, size_t length, std::string hash) : index_(index), length_(length), hash_(hash) {
     size_t len = length_;
     int times = 0;
+    localDownloadedBytes_ = 0;
     while (len >= BLOCK_SIZE){
         blocks_.emplace_back(Block(index, times * BLOCK_SIZE, BLOCK_SIZE, Block::Status::Missing, std::string()));
         times++;
@@ -41,18 +42,18 @@ size_t Piece::GetIndex() const{
     return index_;
 }
 
-
-void Piece::SaveBlock(size_t blockOffset, std::string data){//в каких единицах blockoffset????
+size_t Piece::SaveBlock(size_t blockOffset, std::string data){
     for(int i = 0; i < blocks_.size(); ++i){
-        if(blocks_[i].offset == blockOffset){
-            blocks_[i].data = data;
+        if(blocks_[i].offset == blockOffset && blocks_[i].status != Block::Status::Retrieved){
+            blocks_[i].data = std::move(data);
             blocks_[i].status = Block::Status::Retrieved;
-            return;
+            localDownloadedBytes_ += blocks_[i].length;
+            return blocks_[i].data.length();
         }
     }
+    return 0;
 
 }
-
 
 bool Piece::AllBlocksRetrieved() const{
     for(int i = 0; i < blocks_.size(); ++i){
@@ -87,5 +88,7 @@ void Piece::Reset(){
         blocks_[i].data = "";
         blocks_[i].status = Block::Status::Missing;
     }        
+    localDownloadedBytes_ = 0;
 }
+
 

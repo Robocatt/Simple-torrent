@@ -54,9 +54,10 @@ public:
     size_t GetIndex() const;
 
     /*
-     * Сохранить скачанные данные для какого-то блока
+     * Сохранить скачанные данные для какого-то блока,
+     return number of bytes saved
      */
-    void SaveBlock(size_t blockOffset, std::string data);
+    size_t SaveBlock(size_t blockOffset, std::string data);
 
     /*
      * Скачали ли уже все блоки
@@ -83,10 +84,24 @@ public:
      */
     void Reset();
 
+    const size_t GetDownloadedBytes(){
+        return localDownloadedBytes_;
+    }
+
+    Block* GetBlockByOffset(size_t offset){
+        for(auto& blk : blocks_){
+            if(blk.offset == offset){
+                return &blk;
+            }
+        }
+        return nullptr;
+    }
+
 private:
     const size_t index_, length_;
     const std::string hash_;
     std::vector<Block> blocks_;
+    size_t localDownloadedBytes_;
 };
 
 using PiecePtr = std::shared_ptr<Piece>;

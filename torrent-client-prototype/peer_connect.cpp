@@ -161,7 +161,7 @@ void PeerConnect::RequestPiece() {
         pieceStorage_.PieceProcessed(pieceInProgress_);
         Terminate();
     }
-    
+
 }
 
 
@@ -172,7 +172,7 @@ void PeerConnect::MainLoop() {
         try {
             receivedData = socket_.ReceiveOneMessage();
         } catch (const std::exception& e) {
-            l->error("{} peer, Error in receiveData, del piece, term the peer: {}", socket_.GetIp(), e.what());
+            l->warn("{} peer, Error in receiveData, del piece, term the peer: {}", socket_.GetIp(), e.what());
 
             // Handle mismatched hash and return the piece to the queue
             if (pieceInProgress_) {
@@ -224,8 +224,14 @@ void PeerConnect::MainLoop() {
                 size_t beginReceived = BytesToInt(ms.payload.substr(4, 4));
                 std::string dataReceived = ms.payload.substr(8);
 
-                if (pieceInProgress_) {
-                    pieceInProgress_->SaveBlock(beginReceived, dataReceived);
+                if (pieceInProgress_) {                    
+                    Block* blk = pieceInProgress_->GetBlockByOffset(beginReceived);
+                    if(blk){
+                        size_t savedBytes = pieceInProgress_->SaveBlock(beginReceived, dataReceived);
+                        if(savedBytes){
+                            pieceStorage_.bytesDownloaded.fetch_add(savedBytes, std::memory_order_relaxed);
+                        }
+                    }
                     l->trace("Saved piece data for index {} offset {}", indexReceived, beginReceived);
                 }
                 

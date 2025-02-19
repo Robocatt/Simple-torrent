@@ -42,13 +42,14 @@ spdlog::level::level_enum parseLogLevel(const std::string& levelStr) {
     if (levelLower == "debug")    return spdlog::level::debug;
     if (levelLower == "info")     return spdlog::level::info;
     if (levelLower == "warn")     return spdlog::level::warn;
+    if (levelLower == "error")     return spdlog::level::err;
     if (levelLower == "critical") return spdlog::level::critical;
 
-    return spdlog::level::warn;
+    return spdlog::level::err;
 }
 
 void logInit(spdlog::level::level_enum consoleLevel){
-    // main log for the user with WARNS and above 
+    // main log for the user with errors and above ot user defined level
     auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     consoleSink->set_level(consoleLevel);
     
@@ -72,7 +73,37 @@ void logInit(spdlog::level::level_enum consoleLevel){
     }
 }
 
+std::atomic<bool> keepPrinting(true);
+//  thread that displays progress every half second
+std::unique_ptr<std::thread> startLiveProgress(PieceStorage& pieceStorage){
+    
+    auto ptr = std::make_unique<std::thread>([&]() {
+        using namespace std::chrono_literals;
+        while (keepPrinting.load()) {
+            size_t have  = pieceStorage.bytesDownloaded.load(std::memory_order_relaxed);
+            const size_t total = pieceStorage.GetTotalBytesToDownload();
 
+            double percent = (total == 0) ? 0.0
+                : 100.0 * (static_cast<double>(have) / static_cast<double>(total));
+
+            // Print progress on one line with carriage return
+            std::cout << "\rDownloaded: " << have << "/" << total
+                    << " bytes (" << std::fixed << std::setprecision(2)
+                    << percent << "%)" << std::flush;
+
+            std::this_thread::sleep_for(500ms);
+        }
+    });
+    return ptr;
+}
+
+void stopLiveProgress(std::unique_ptr<std::thread> ptr){
+    keepPrinting.store(false);
+    if (ptr && ptr->joinable()) {
+        ptr->join();
+    }
+    std::cout << std::endl;
+}
 
 
 std::filesystem::path PrepareDownloadDirectory(const std::filesystem::path& userPath) {
@@ -216,7 +247,7 @@ void DownloadTorrentFile(const TorrentFile& torrentFile, PieceStorage& pieces, c
     l->info("END DownloadTorrentFile");
 }
 
-void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::path& pathToSaveDirectory, size_t percent, bool doCheck) {
+void ProcessTorrentFile(const std::filesystem::path& file, const std::filesystem::path& pathToSaveDirectory, size_t percent, bool doCheck) {
     TorrentFile torrentFile;
     auto l = spdlog::get("mainLogger");
     try {
@@ -255,7 +286,16 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
         std::cout.flush();
     }
     PieceStorage pieces(torrentFile, pathToSaveDirectory, percent, selectedIndices, doCheck);
-    DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
+    
+    
+    std::unique_ptr<std::thread> progressThreadPtr = startLiveProgress(pieces);
+    try{
+        DownloadTorrentFile(torrentFile, pieces, PeerId, percent);
+    }catch(...){
+        stopLiveProgress(std::move(progressThreadPtr));    
+    }
+    stopLiveProgress(std::move(progressThreadPtr));
+
     pieces.CloseOutputFile();
     if(doCheck){
         if(CheckDownloadedPiecesIntegrity(pathToSaveDirectory / torrentFile.name, torrentFile, pieces, selectedIndices)){
@@ -268,7 +308,7 @@ void TestTorrentFile(const std::filesystem::path& file, const std::filesystem::p
 
 int main(int argc, char* argv[]) {
 
-    spdlog::level::level_enum consoleLogLevel = spdlog::level::warn;
+    spdlog::level::level_enum consoleLogLevel = spdlog::level::err;
     int i = 1;
     // try to parse log-level first, if present. 
     std::string arg = argv[i];
@@ -368,7 +408,7 @@ int main(int argc, char* argv[]) {
                                                    : ".")) / "Downloads"
             );
         }
-        TestTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent, doCheck);
+        ProcessTorrentFile(pathToTorrentFile, pathToSaveDirectory, percent, doCheck);
         l->critical("End of main.cpp, file has been saved successfully");
 
     }catch (const std::exception& e){
